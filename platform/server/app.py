@@ -220,6 +220,66 @@ async def list_skills(since: int = 0, x_api_key: Optional[str] = Header(None)):
     return {"ok": True, "items": [dict(r) for r in rows]}
 
 
+
+# ── 业务任务模板（客户核查 / 台账 / 标书）──────────────────────
+TEMPLATES = [
+    {
+        "id": "verify",
+        "name": "客户资料核查",
+        "params": ["公司名称"],
+        "prompt": (
+            "请按公司 SOP 核查客户「{公司名称}」，输出核查报告：\n"
+            "1) 工商信息：注册资本、成立时间、经营状态、注册地址\n"
+            "2) 司法风险：涉诉、被执行、失信记录\n"
+            "3) 经营异常：异常名录、行政处罚\n"
+            "4) 结论与建议：可合作/需谨慎/不建议，并说明理由\n"
+            "要求：中文、先结论再分点、每条给依据；查不到或不确定的，明确标注「需人工核实」，不要编造。"
+        ),
+    },
+    {
+        "id": "ledger",
+        "name": "台账整理",
+        "params": ["数据说明"],
+        "prompt": (
+            "请按公司 SOP 整理台账数据：{数据说明}。\n"
+            "1) 缺失字段清单\n2) 格式不合规项（日期/金额/名称）\n"
+            "3) 疑似重复记录\n4) 处理建议\n"
+            "要求：中文、先给结论、分点列出问题清单，不编造数据。"
+        ),
+    },
+    {
+        "id": "bid",
+        "name": "标书初稿",
+        "params": ["项目名称", "招标要求"],
+        "prompt": (
+            "请为项目「{项目名称}」撰写投标文件初稿。招标要求：{招标要求}。\n"
+            "结构：一、项目理解 二、技术方案 三、实施计划 四、服务承诺 五、报价说明\n"
+            "要求：中文、正式书面语、条款对应招标要求；不确定的参数标注「待确认」，不要编造资质或业绩。"
+        ),
+    },
+]
+
+@app.get("/v1/templates")
+async def list_templates(request: Request):
+    require_admin(request)
+    return {"ok": True, "items": [{"id": t["id"], "name": t["name"], "params": t["params"]} for t in TEMPLATES]}
+
+def render_template(template_id: str, params: dict) -> tuple:
+    for t in TEMPLATES:
+        if t["id"] != template_id:
+            continue
+        prompt = t["prompt"]
+        missing = []
+        for p in t["params"]:
+            v = (params or {}).get(p, "")
+            if not v:
+                missing.append(p)
+            prompt = prompt.replace("{" + p + "}", str(v))
+        if missing:
+            raise HTTPException(400, "missing params: " + ", ".join(missing))
+        return t["name"], prompt
+    raise HTTPException(404, "template not found")
+
 # ── Octop 适配层（PoC：平台任务交给 Octop 助理执行）──────────────
 OCTOP_HOME = os.environ.get("DSH_OCTOP_HOME", "/opt/dsh-octop/data")
 OCTOP_BIN = os.environ.get("DSH_OCTOP_BIN", "/opt/dsh-octop/venv/bin/octop")
@@ -253,8 +313,12 @@ async def octop_run(request: Request, x_api_key: Optional[str] = None, x_admin_c
     """管理员在平台上派一个任务，交给 Octop 执行，并把结果记成 task + step。"""
     require_admin(request)
     body = await request.json()
-    title = (body.get("title") or "").strip() or "Octop 任务"
+    title = (body.get("title") or "").strip()
     prompt = (body.get("prompt") or "").strip()
+    if body.get("template_id"):
+        tname, prompt = render_template(str(body["template_id"]), body.get("params") or {})
+        title = title or tname
+    title = title or "Octop 任务"
     if not prompt:
         raise HTTPException(400, "prompt required")
     tid = uuid.uuid4().hex
