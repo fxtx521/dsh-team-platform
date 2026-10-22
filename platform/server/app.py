@@ -692,6 +692,118 @@ function esc(s){return String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<
 load();
 </script></body></html>"""
 
+
+# ── 经验审核 / 技能库 页面 ───────────────────────────────
+@app.get("/v1/skills/admin")
+async def skills_admin(request: Request):
+    require_admin(request)
+    c = conn()
+    rows = c.execute("""SELECT s.id, s.name, s.type, s.version, s.content, s.updated_at,
+                               (SELECT COUNT(DISTINCT terminal_id) FROM skill_deliveries d WHERE d.skill_id=s.id) AS delivered,
+                               (SELECT MAX(delivered_at) FROM skill_deliveries d WHERE d.skill_id=s.id) AS last_delivered
+                        FROM skills s ORDER BY s.updated_at DESC""").fetchall()
+    c.close()
+    return {"ok": True, "items": [dict(r) for r in rows]}
+
+@app.post("/v1/experience/{exp_id}/reject")
+async def reject_experience(exp_id: str, request: Request):
+    require_admin(request)
+    c = conn()
+    c.execute("UPDATE experiences SET status='rejected' WHERE id=?", (exp_id,))
+    c.commit(); c.close()
+    audit("admin", "experience.reject", exp_id, "")
+    return {"ok": True}
+
+NAV = '<div class="bar"><div class="logo">砺</div><b>团队 AI 平台</b>' \
+      '<span class="sp"></span>' \
+      '<a href="/dashboard">看板</a><a href="/terminals">终端</a>' \
+      '<a href="/experience">经验审核</a><a href="/skills">技能库</a>' \
+      '<a href="/logout">退出</a></div>'
+
+PAGE_CSS = """*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#eef1f7;color:#1f2937;padding:24px}
+.bar{background:#1f3a5f;color:#fff;border-radius:14px;padding:14px 22px;display:flex;align-items:center;gap:14px;margin-bottom:18px}
+.bar .logo{width:32px;height:32px;border-radius:8px;background:#f5661f;display:flex;align-items:center;justify-content:center;font-weight:700}
+.bar .sp{flex:1}
+.bar a{color:#fff;text-decoration:none;opacity:.85;font-size:13px}
+.bar a:hover{opacity:1}
+.card{background:#fff;border-radius:14px;padding:20px 24px;box-shadow:0 6px 24px rgba(15,35,70,.06);margin-bottom:14px}
+h2{font-size:18px;color:#1f3a5f;margin-bottom:10px}
+.muted{color:#6b7280;font-size:13px}
+pre{white-space:pre-wrap;font-family:inherit;font-size:13px;line-height:1.6;color:#374151;background:#f8fafc;border-radius:10px;padding:12px;margin:10px 0}
+button{border:0;border-radius:9px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;margin-right:8px}
+.ok{background:#16a34a;color:#fff}.no{background:#e5e7eb;color:#374151}
+.tag{display:inline-block;background:#eef2ff;color:#3b5bdb;border-radius:999px;padding:2px 10px;font-size:12px;margin-left:8px}
+input,textarea{width:100%;border:1px solid #dfe3ea;border-radius:10px;padding:10px 12px;font-size:14px;font-family:inherit;margin:6px 0 12px}
+textarea{min-height:120px}
+"""
+
+EXPERIENCE_HTML = """<!doctype html><html><head><meta charset="utf-8"><title>经验审核</title><style>""" + PAGE_CSS + """</style></head><body>""" + NAV + """
+<div class="card"><h2>经验审核 · 待通过</h2>
+<div class="muted">助理完成任务后自动提炼的「可固化经验」。通过后会进技能库并自动下发到所有终端。</div>
+<div id="list" style="margin-top:14px"></div></div>
+<script>
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
+async function load(){
+  const r=await fetch("/v1/experience?status=pending");const d=await r.json();
+  const el=document.getElementById("list");
+  if(!d.items.length){el.innerHTML='<div class="muted">暂无待审核经验（可以先派几个任务，再点“提炼”）</div>';return;}
+  el.innerHTML=d.items.map(i=>`<div style="border:1px solid #eef0f4;border-radius:12px;padding:14px;margin-bottom:12px">
+    <div><b>${esc(i.title)}</b><span class="tag">${esc(i.kind)}</span></div>
+    <div class="muted" style="margin-top:6px">任务 ID：${esc(i.task_id).slice(0,12)}</div>
+    <pre>${esc(i.content)}</pre>
+    <button class="ok" onclick="act('${i.id}','approve')">通过并入库</button>
+    <button class="no" onclick="act('${i.id}','reject')">驳回</button></div>`).join("");
+}
+async function act(id,action){
+  const r=await fetch("/v1/experience/"+id+"/"+action,{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});
+  const d=await r.json();
+  if(d.ok){alert(action==="approve"?("已入库："+(d.name||"")):"已驳回");load();}else{alert("失败："+JSON.stringify(d));}
+}
+load();
+</script></body></html>"""
+
+SKILLS_HTML = """<!doctype html><html><head><meta charset="utf-8"><title>技能库</title><style>""" + PAGE_CSS + """</style></head><body>""" + NAV + """
+<div class="card"><h2>技能库</h2>
+<div class="muted">技能会自动下发到员工终端（DSH 技能目录），助理按 SOP 干活。</div>
+<div id="list" style="margin-top:14px"></div></div>
+<div class="card"><h2>新增 / 更新技能</h2>
+<div class="muted">同名技能会自动版本 +1 并重新下发。</div>
+<div style="margin-top:10px"><input id="name" placeholder="技能名称，例如：客户核查 SOP"></div>
+<input id="type" placeholder="类型，例如：sop" value="sop">
+<textarea id="content" placeholder="技能内容（步骤/规范/模板）"></textarea>
+<button class="ok" onclick="save()">保存</button></div>
+<script>
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
+async function load(){
+  const r=await fetch("/v1/skills/admin");const d=await r.json();
+  document.getElementById("list").innerHTML=d.items.map(s=>`<div style="border:1px solid #eef0f4;border-radius:12px;padding:14px;margin-bottom:12px">
+    <div><b>${esc(s.name)}</b><span class="tag">v${s.version}</span><span class="tag">${esc(s.type||"")}</span></div>
+    <div class="muted" style="margin-top:6px">已下发终端：${s.delivered||0} 台 · 最近下发：${esc((s.last_delivered||"未下发")).slice(0,19)}</div>
+    <pre>${esc(s.content)}</pre></div>`).join("");
+}
+async function save(){
+  const body={name:document.getElementById("name").value,type:document.getElementById("type").value,content:document.getElementById("content").value};
+  if(!body.name){alert("技能名称必填");return;}
+  const r=await fetch("/v1/skills",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  const d=await r.json();
+  if(d.ok){alert("已保存：v"+d.version);document.getElementById("name").value="";document.getElementById("content").value="";load();}else{alert("失败："+JSON.stringify(d));}
+}
+load();
+</script></body></html>"""
+
+@app.get("/experience", response_class=HTMLResponse)
+async def experience_page(request: Request):
+    if not check_token(request.cookies.get(COOKIE_NAME, "")):
+        return RedirectResponse("/login", status_code=303)
+    return EXPERIENCE_HTML
+
+@app.get("/skills", response_class=HTMLResponse)
+async def skills_page(request: Request):
+    if not check_token(request.cookies.get(COOKIE_NAME, "")):
+        return RedirectResponse("/login", status_code=303)
+    return SKILLS_HTML
+
 @app.get("/terminals", response_class=HTMLResponse)
 async def terminals_page(request: Request):
     if not check_token(request.cookies.get(COOKIE_NAME, "")):
