@@ -5,7 +5,7 @@ import os, sqlite3, hashlib, hmac, secrets, time, uuid, json, subprocess
 from datetime import datetime, timezone
 from typing import Optional, List
 from urllib.parse import parse_qs
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -30,6 +30,8 @@ CREATE TABLE IF NOT EXISTS artifacts(
   path TEXT, visibility TEXT DEFAULT 'self', created_at TEXT);
 CREATE TABLE IF NOT EXISTS skills(
   id TEXT PRIMARY KEY, name TEXT, type TEXT, version INTEGER DEFAULT 1, content TEXT, updated_at TEXT);
+CREATE TABLE IF NOT EXISTS skill_deliveries(
+  id TEXT PRIMARY KEY, terminal_id TEXT, skill_id TEXT, version INTEGER, delivered_at TEXT);
 CREATE TABLE IF NOT EXISTS audit_logs(
   id TEXT PRIMARY KEY, actor TEXT, action TEXT, target TEXT, detail TEXT, created_at TEXT);
 """
@@ -211,11 +213,89 @@ async def add_artifact(task_id: str, request: Request, x_api_key: Optional[str] 
     audit(t["user_name"], "artifact.add", task_id, b.get("name",""))
     return {"ok": True, "id": aid}
 
+@app.post("/v1/tasks/{task_id}/artifacts/upload")
+async def upload_artifact(task_id: str, file: UploadFile = File(...),
+                          x_api_key: Optional[str] = Header(None), visibility: str = Form("self")):
+    """终端上传产物文件（上传后可在看板下载）。"""
+    t = auth(x_api_key)
+    raw = await file.read()
+    if len(raw) > 200 * 1024 * 1024:
+        raise HTTPException(413, "file too large (max 200MB)")
+    aid = uuid.uuid4().hex
+    safe = os.path.basename(file.filename or "artifact")
+    dest = os.path.join(ART, aid + "_" + safe)
+    with open(dest, "wb") as f:
+        f.write(raw)
+    sha = hashlib.sha256(raw).hexdigest()
+    c = conn()
+    c.execute("""INSERT INTO artifacts(id,task_id,name,mime,size,sha256,path,visibility,created_at)
+                 VALUES(?,?,?,?,?,?,?,?,?)""",
+              (aid, task_id, safe, file.content_type or "", len(raw), sha, dest, visibility, now()))
+    c.commit(); c.close()
+    audit(t["user_name"], "artifact.upload", task_id, safe)
+    return {"ok": True, "id": aid, "name": safe, "size": len(raw), "sha256": sha}
+
+@app.post("/v1/tasks/{task_id}/artifacts/upload-b64")
+async def upload_artifact_b64(task_id: str, request: Request, x_api_key: Optional[str] = Header(None)):
+    """终端上传产物（base64，供浏览器端插件使用）。"""
+    t = auth(x_api_key)
+    b = await request.json()
+    import base64 as _b64
+    name = os.path.basename(str(b.get("name") or "artifact"))
+    try:
+        raw = _b64.b64decode(str(b.get("content_b64") or ""), validate=False)
+    except Exception:
+        raise HTTPException(400, "invalid base64")
+    if len(raw) > 200 * 1024 * 1024:
+        raise HTTPException(413, "file too large")
+    aid = uuid.uuid4().hex
+    dest = os.path.join(ART, aid + "_" + name)
+    with open(dest, "wb") as f:
+        f.write(raw)
+    sha = hashlib.sha256(raw).hexdigest()
+    c = conn()
+    c.execute("""INSERT INTO artifacts(id,task_id,name,mime,size,sha256,path,visibility,created_at)
+                 VALUES(?,?,?,?,?,?,?,?,?)""",
+              (aid, task_id, name, b.get("mime") or "", len(raw), sha, dest, b.get("visibility") or "team", now()))
+    c.commit(); c.close()
+    audit(t["user_name"], "artifact.upload", task_id, name)
+    return {"ok": True, "id": aid, "name": name, "size": len(raw), "sha256": sha}
+
+@app.get("/v1/artifacts/{artifact_id}/download")
+async def download_artifact(artifact_id: str, request: Request):
+    require_admin(request)
+    c = conn()
+    r = c.execute("SELECT * FROM artifacts WHERE id=?", (artifact_id,)).fetchone()
+    c.close()
+    if not r or not r["path"] or not os.path.exists(r["path"]):
+        raise HTTPException(404, "artifact not found")
+    return FileResponse(r["path"], filename=r["name"] or "artifact")
+
 @app.get("/v1/skills")
 async def list_skills(since: int = 0, x_api_key: Optional[str] = Header(None)):
     auth(x_api_key)
+    t = auth(x_api_key)
     c = conn()
     rows = c.execute("SELECT * FROM skills WHERE version >= ? ORDER BY updated_at DESC", (since,)).fetchall()
+    if x_api_key:
+        for r in rows:
+            exists = c.execute("SELECT id FROM skill_deliveries WHERE terminal_id=? AND skill_id=? AND version=?",
+                               (t["id"], r["id"], r["version"])).fetchone()
+            if not exists:
+                c.execute("INSERT INTO skill_deliveries(id,terminal_id,skill_id,version,delivered_at) VALUES(?,?,?,?,?)",
+                          (uuid.uuid4().hex, t["id"], r["id"], r["version"], now()))
+        c.commit()
+    c.close()
+    return {"ok": True, "items": [dict(r) for r in rows]}
+
+@app.get("/v1/skills/stats")
+async def skill_stats(request: Request):
+    require_admin(request)
+    c = conn()
+    rows = c.execute("""SELECT s.id, s.name, s.version,
+                               (SELECT COUNT(DISTINCT terminal_id) FROM skill_deliveries d WHERE d.skill_id=s.id) AS delivered_terminals,
+                               (SELECT MAX(delivered_at) FROM skill_deliveries d WHERE d.skill_id=s.id) AS last_delivered
+                        FROM skills s ORDER BY s.updated_at DESC""").fetchall()
     c.close()
     return {"ok": True, "items": [dict(r) for r in rows]}
 
@@ -251,6 +331,7 @@ TEMPLATES = [
     {
         "id": "verify",
         "name": "客户资料核查",
+        "skill": "客户核查 SOP（v2）",
         "params": ["公司名称"],
         "prompt": (
             "请按公司 SOP 核查客户「{公司名称}」，输出核查报告：\n"
@@ -335,6 +416,18 @@ def octop_chat(prompt: str, agent_id: str = "", timeout: int = 240) -> dict:
 
 SEARCH_BIN = os.environ.get("DSH_SEARCH_BIN", "/opt/dsh-octop/tools/websearch.py")
 
+def sanitize_hits(text: str, limit: int = 2200) -> str:
+    """精简检索结果：去掉长链接行，控制注入提示词的长度。"""
+    out = []
+    for line in (text or "").splitlines():
+        s = line.strip()
+        if not s or s.startswith("http") or s.startswith("[来源"):
+            continue
+        if len(s) > 300:
+            s = s[:300] + "…"
+        out.append(s)
+    return "\n".join(out)[:limit]
+
 def run_search(q: str, n: int = 6, timeout: int = 60) -> str:
     """调用本地搜索脚本，返回纯文本结果（失败返回空串）。"""
     try:
@@ -371,7 +464,7 @@ async def octop_run(request: Request, x_api_key: Optional[str] = None, x_admin_c
         search_query = str(body["search_query"]).strip()
     if search_query:
         t_search = time.time()
-        hits = run_search(search_query + " 工商信息 注册资本 成立时间", 6)
+        hits = sanitize_hits(run_search(search_query + " 工商信息 注册资本 成立时间", 6))
         c = conn()
         c.execute("""INSERT INTO task_steps(id,task_id,seq,tool,args_digest,duration_ms,ok,error_code,created_at)
                      VALUES(?,?,?,?,?,?,?,?,?)""",
@@ -383,13 +476,35 @@ async def octop_run(request: Request, x_api_key: Optional[str] = None, x_admin_c
                 "【重要】系统已经为你完成了联网检索，下面就是刚刚检索到的真实结果（不是让你再检索）。\n"
                 "请直接引用其中的公司名称、成立时间、地址、状态等事实，严禁声称「检索失败/超时/无数据」。\n"
                 "资料里没有的字段，写「资料未提供」，不要编造。\n\n"
-                "=== 检索到的真实资料 ===\n" + hits[:6000] + "\n\n=== 你的任务 ===\n" + prompt
+                "=== 检索到的真实资料 ===\n" + hits + "\n\n=== 你的任务 ===\n" + prompt
             )
+    # 技能注入：把公司 SOP 拼进提示词，让助理照规矩干活
+    seq = 2 if search_query else 1
+    skill_name = ""
+    if body.get("template_id"):
+        for t in TEMPLATES:
+            if t["id"] == body["template_id"]:
+                skill_name = t.get("skill") or ""
+    if not skill_name and body.get("skill"):
+        skill_name = str(body["skill"])
+    if skill_name:
+        c = conn()
+        sk = c.execute("SELECT * FROM skills WHERE name=?", (skill_name,)).fetchone()
+        c.close()
+        if sk:
+            t0 = time.time()
+            prompt = ("【必须遵循的公司 SOP】\n" + sk["content"] + "\n\n【任务】\n" + prompt)
+            c = conn()
+            c.execute("""INSERT INTO task_steps(id,task_id,seq,tool,args_digest,duration_ms,ok,error_code,created_at)
+                         VALUES(?,?,?,?,?,?,?,?,?)""",
+                      (f"{tid}-k", tid, seq, "skill.inject", sk["id"][:16], int((time.time()-t0)*1000), 1, "", now()))
+            c.commit(); c.close()
+            seq += 1
     res = octop_chat(prompt)
     c = conn()
     c.execute("""INSERT INTO task_steps(id,task_id,seq,tool,args_digest,duration_ms,ok,error_code,created_at)
                  VALUES(?,?,?,?,?,?,?,?,?)""",
-              (f"{tid}-1", tid, 2 if search_query else 1, "octop.agent", hashlib.sha256(prompt.encode()).hexdigest()[:16],
+              (f"{tid}-1", tid, seq, "octop.agent", hashlib.sha256(prompt.encode()).hexdigest()[:16],
                res["elapsed_ms"], 1 if res["ok"] else 0, "" if res["ok"] else "octop_error", now()))
     if res["ok"]:
         c.execute("UPDATE tasks SET status='done', ended_at=?, summary=? WHERE id=?", (now(), res["reply"][:2000], tid))
@@ -601,7 +716,7 @@ async function load(){
   html += '</tbody></table></div>';
   html += '<div class="card"><h3 style="font-size:14px;color:#1f3a5f;margin-bottom:8px">产物（'+d.artifacts.length+'）</h3>';
   if(!d.artifacts.length) html += '<div class="muted">无</div>';
-  d.artifacts.forEach(a=>{ html += '<div style="padding:6px 0;font-size:13px">📄 '+esc(a.name)+' <span class="muted">· '+(a.size||0)+' B · '+esc(a.visibility||'')+'</span></div>'; });
+  d.artifacts.forEach(a=>{ html += '<div style="padding:6px 0;font-size:13px">📄 '+esc(a.name)+' <span class="muted">· '+(a.size||0)+' B · '+esc(a.visibility||'')+'</span> <a style="color:#2f6bff;margin-left:8px" href="/v1/artifacts/'+a.id+'/download">下载</a></div>'; });
   html += '</div>';
   document.getElementById('app').innerHTML = html;
 }

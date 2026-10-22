@@ -139,7 +139,13 @@ export function apply(ctx, rawConfig) {
           await httpJson('POST', `${cfg.serverUrl}/v1/tasks/${encodeURIComponent(p.id)}/steps`, { steps: p.steps }, cfg.apiKey);
         }
         for (const a of p.artifacts || []) {
-          await httpJson('POST', `${cfg.serverUrl}/v1/tasks/${encodeURIComponent(p.id)}/artifacts`, a, cfg.apiKey);
+          if (a.content_b64) {
+            await httpJson('POST', `${cfg.serverUrl}/v1/tasks/${encodeURIComponent(p.id)}/artifacts/upload-b64`, {
+              name: a.name, mime: a.mime || '', visibility: a.visibility || 'team', content_b64: a.content_b64,
+            }, cfg.apiKey);
+          } else {
+            await httpJson('POST', `${cfg.serverUrl}/v1/tasks/${encodeURIComponent(p.id)}/artifacts`, a, cfg.apiKey);
+          }
         }
         await httpJson('PATCH', `${cfg.serverUrl}/v1/tasks/${encodeURIComponent(p.id)}`, {
           status: p.status, ended_at: p.ended_at, summary: p.summary || '',
@@ -175,6 +181,10 @@ export function apply(ctx, rawConfig) {
         const d = join(dir, name);
         mkdirSync(d, { recursive: true });
         writeFileSync(join(d, 'SKILL.md'), '# ' + s.name + '\n\n' + (s.content || '') + '\n', 'utf8');
+        // 同步一份到 DSH 技能目录，让助手能直接看到并调用
+        const dshDir = join(homedir(), '.dsh', 'skills', name);
+        mkdirSync(dshDir, { recursive: true });
+        writeFileSync(join(dshDir, 'SKILL.md'), '# ' + s.name + '\n\n' + (s.content || '') + '\n', 'utf8');
       }
       writeFileSync(join(dir, '.index.json'), JSON.stringify({ count: items.length, at: Date.now() }, null, 2), 'utf8');
       log('skills synced: ' + items.length);
@@ -237,8 +247,18 @@ export function apply(ctx, rawConfig) {
       }
       if (t === 'deliverables/presented') {
         for (const f of (data.files || [])) {
-          const name = f.path ? f.path.split('/').pop() : (f.name || 'file');
-          rec.artifacts.push({ name, mime: '', size: 0, sha256: '', path: f.path || '', visibility: 'team' });
+          const p = f.path || '';
+          const name = p ? p.split('/').pop() : (f.name || 'file');
+          let size = 0, sha256 = '', content_b64 = '';
+          try {
+            if (p && existsSync(p)) {
+              const buf = readFileSync(p);
+              size = buf.length;
+              sha256 = createHash('sha256').update(buf).digest('hex');
+              if (size <= 20 * 1024 * 1024) content_b64 = buf.toString('base64');
+            }
+          } catch (e) { log('artifact read failed: ' + e.message); }
+          rec.artifacts.push({ name, mime: '', size, sha256, path: p, visibility: 'team', content_b64 });
         }
         return;
       }
