@@ -30,6 +30,9 @@ CREATE TABLE IF NOT EXISTS artifacts(
   path TEXT, visibility TEXT DEFAULT 'self', created_at TEXT);
 CREATE TABLE IF NOT EXISTS skills(
   id TEXT PRIMARY KEY, name TEXT, type TEXT, version INTEGER DEFAULT 1, content TEXT, updated_at TEXT);
+CREATE TABLE IF NOT EXISTS experiences(
+  id TEXT PRIMARY KEY, task_id TEXT, title TEXT, kind TEXT, content TEXT,
+  status TEXT DEFAULT 'pending', skill_id TEXT, created_at TEXT);
 CREATE TABLE IF NOT EXISTS skill_deliveries(
   id TEXT PRIMARY KEY, terminal_id TEXT, skill_id TEXT, version INTEGER, delivered_at TEXT);
 CREATE TABLE IF NOT EXISTS audit_logs(
@@ -288,6 +291,71 @@ async def list_skills(since: int = 0, x_api_key: Optional[str] = Header(None)):
     c.close()
     return {"ok": True, "items": [dict(r) for r in rows]}
 
+@app.post("/v1/experience/distill")
+async def distill_experience(request: Request):
+    """经验提炼 V1：扫描最近完成的 Octop 任务，生成经验候选（待审核）。"""
+    require_admin(request)
+    body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+    hours = int(body.get("hours") or 24)
+    import datetime as _dt
+    since = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(hours=hours)).isoformat()
+    c = conn()
+    tasks = c.execute("""SELECT * FROM tasks WHERE type='octop' AND status='done' AND created_at>=?
+                         ORDER BY created_at DESC LIMIT 50""", (since,)).fetchall()
+    created = []
+    for t in tasks:
+        dup = c.execute("SELECT id FROM experiences WHERE task_id=?", (t["id"],)).fetchone()
+        if dup:
+            continue
+        steps = c.execute("SELECT tool, duration_ms, ok FROM task_steps WHERE task_id=? ORDER BY seq", (t["id"],)).fetchall()
+        step_txt = "、".join(f'{s["tool"]}({s["duration_ms"]}ms)' for s in steps)
+        content = ("适用场景：" + (t["title"] or "") + "\n"
+                   "执行链路：" + (step_txt or "无步骤记录") + "\n"
+                   "产出要点：" + ((t["summary"] or "")[:600] or "无摘要"))
+        eid = uuid.uuid4().hex
+        c.execute("""INSERT INTO experiences(id,task_id,title,kind,content,status,created_at)
+                     VALUES(?,?,?,?,?,?,?)""",
+                  (eid, t["id"], (t["title"] or "经验") + " · 可固化", "sop", content, "pending", now()))
+        created.append(eid)
+    c.commit(); c.close()
+    return {"ok": True, "created": len(created), "ids": created}
+
+@app.get("/v1/experience")
+async def list_experience(request: Request, status: str = ""):
+    require_admin(request)
+    c = conn()
+    if status:
+        rows = c.execute("SELECT * FROM experiences WHERE status=? ORDER BY created_at DESC LIMIT 100", (status,)).fetchall()
+    else:
+        rows = c.execute("SELECT * FROM experiences ORDER BY created_at DESC LIMIT 100").fetchall()
+    c.close()
+    return {"ok": True, "items": [dict(r) for r in rows]}
+
+@app.post("/v1/experience/{exp_id}/approve")
+async def approve_experience(exp_id: str, request: Request):
+    """审核通过：把经验候选固化成技能（进技能库 → 自动下发终端）。"""
+    require_admin(request)
+    body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+    c = conn()
+    e = c.execute("SELECT * FROM experiences WHERE id=?", (exp_id,)).fetchone()
+    if not e:
+        c.close(); raise HTTPException(404, "experience not found")
+    name = (body.get("name") or e["title"]).strip()
+    content = e["content"] or ""
+    sk = c.execute("SELECT * FROM skills WHERE name=?", (name,)).fetchone()
+    if sk:
+        ver = int(sk["version"]) + 1
+        c.execute("UPDATE skills SET content=?, version=?, updated_at=? WHERE id=?", (content, ver, now(), sk["id"]))
+        sid = sk["id"]
+    else:
+        sid = uuid.uuid4().hex
+        c.execute("INSERT INTO skills(id,name,type,version,content,updated_at) VALUES(?,?,?,?,?,?)",
+                  (sid, name, "sop", 1, content, now()))
+    c.execute("UPDATE experiences SET status='approved', skill_id=? WHERE id=?", (sid, exp_id))
+    c.commit(); c.close()
+    audit("admin", "experience.approve", exp_id, name)
+    return {"ok": True, "skill_id": sid, "name": name}
+
 @app.get("/v1/skills/stats")
 async def skill_stats(request: Request):
     require_admin(request)
@@ -345,6 +413,7 @@ TEMPLATES = [
     {
         "id": "ledger",
         "name": "台账整理",
+        "skill": "台账整理 SOP",
         "params": ["数据说明"],
         "prompt": (
             "请按公司 SOP 整理台账数据：{数据说明}。\n"
@@ -356,6 +425,7 @@ TEMPLATES = [
     {
         "id": "bid",
         "name": "标书初稿",
+        "skill": "标书撰写 SOP",
         "params": ["项目名称", "招标要求"],
         "prompt": (
             "请为项目「{项目名称}」撰写投标文件初稿。招标要求：{招标要求}。\n"
