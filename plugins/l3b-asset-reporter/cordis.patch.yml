@@ -1,0 +1,11 @@
+# 砺 · 资产上报插件（团队 AI 资产平台 P0 客户端）
+# 只上报任务元数据；正文/客户资料不上传。
+- insert:
+    - id: l3b-asset-reporter
+      name: './entry.js'
+      config:
+        enabled: true
+        serverUrl: 'http://127.0.0.1:8000'
+        apiKey: 'demo-key-0001'
+        flushMs: 30000
+        heartbeatMs: 300000

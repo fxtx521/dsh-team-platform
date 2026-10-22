@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+data/
+*.db
+*.db-wal
+*.db-shm
+# Node
+node_modules/
+# Local / secrets
+.tmp_*
+*.log
+.env
+# OS
+.DS_Store
