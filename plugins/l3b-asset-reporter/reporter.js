@@ -19,6 +19,7 @@ const DEFAULTS = {
   serverUrl: 'http://127.0.0.1:8000',
   apiKey: 'demo-key-0001',
   queueFile: '~/.dsh/platform/queue.jsonl',
+  skillsDir: '~/.dsh/platform/skills',
   logFile: '~/.dsh/platform/reporter.log',
   flushMs: 30000,
   heartbeatMs: 300000,
@@ -158,6 +159,26 @@ export function apply(ctx, rawConfig) {
     try {
       await httpJson('POST', cfg.serverUrl + '/v1/heartbeat', { version: '1.0.0', host: process.env.HOSTNAME || '' }, cfg.apiKey);
     } catch (e) { log('heartbeat failed: ' + e.message); }
+    await syncSkills();
+  };
+
+  // 技能下发：从平台拉取技能库，落到本地 ~/.dsh/platform/skills/<名称>/SKILL.md
+  const syncSkills = async () => {
+    try {
+      const res = await httpJson('GET', cfg.serverUrl + '/v1/skills?since=0', null, cfg.apiKey);
+      const items = (res && res.items) || [];
+      if (!items.length) return;
+      const dir = expandHome(cfg.skillsDir);
+      mkdirSync(dir, { recursive: true });
+      for (const s of items) {
+        const name = String(s.name || 'skill').replace(/[\\/:*?"<>|]/g, '_');
+        const d = join(dir, name);
+        mkdirSync(d, { recursive: true });
+        writeFileSync(join(d, 'SKILL.md'), '# ' + s.name + '\n\n' + (s.content || '') + '\n', 'utf8');
+      }
+      writeFileSync(join(dir, '.index.json'), JSON.stringify({ count: items.length, at: Date.now() }, null, 2), 'utf8');
+      log('skills synced: ' + items.length);
+    } catch (e) { log('skill sync failed: ' + e.message); }
   };
 
   const keyOf = (session, turn) => `${(session && session.id) || 'unknown'}:${turn}`;

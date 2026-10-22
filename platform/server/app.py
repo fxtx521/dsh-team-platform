@@ -219,6 +219,31 @@ async def list_skills(since: int = 0, x_api_key: Optional[str] = Header(None)):
     c.close()
     return {"ok": True, "items": [dict(r) for r in rows]}
 
+@app.post("/v1/skills")
+async def upsert_skill(request: Request):
+    """管理员新增/更新技能（同名自动版本 +1）。"""
+    require_admin(request)
+    b = await request.json()
+    name = (b.get("name") or "").strip()
+    if not name:
+        raise HTTPException(400, "name required")
+    content = b.get("content") or ""
+    c = conn()
+    row = c.execute("SELECT * FROM skills WHERE name=?", (name,)).fetchone()
+    if row:
+        ver = int(row["version"]) + 1
+        c.execute("UPDATE skills SET type=?,version=?,content=?,updated_at=? WHERE id=?",
+                  (b.get("type", "sop"), ver, content, now(), row["id"]))
+        sid, ver_out = row["id"], ver
+    else:
+        sid = uuid.uuid4().hex
+        c.execute("INSERT INTO skills(id,name,type,version,content,updated_at) VALUES(?,?,?,?,?,?)",
+                  (sid, name, b.get("type", "sop"), 1, content, now()))
+        ver_out = 1
+    c.commit(); c.close()
+    audit("admin", "skill.upsert", sid, name)
+    return {"ok": True, "id": sid, "name": name, "version": ver_out}
+
 
 
 # ── 业务任务模板（客户核查 / 台账 / 标书）──────────────────────
@@ -308,6 +333,17 @@ def octop_chat(prompt: str, agent_id: str = "", timeout: int = 240) -> dict:
     except Exception as e:
         return {"ok": False, "reply": "", "error": str(e)[:500], "elapsed_ms": int((time.time()-t0)*1000)}
 
+SEARCH_BIN = os.environ.get("DSH_SEARCH_BIN", "/opt/dsh-octop/tools/websearch.py")
+
+def run_search(q: str, n: int = 6, timeout: int = 60) -> str:
+    """调用本地搜索脚本，返回纯文本结果（失败返回空串）。"""
+    try:
+        p = subprocess.run(["/usr/bin/python3", SEARCH_BIN, q, str(n)],
+                           capture_output=True, text=True, timeout=timeout)
+        return (p.stdout or "").strip()
+    except Exception:
+        return ""
+
 @app.post("/v1/octop/run")
 async def octop_run(request: Request, x_api_key: Optional[str] = None, x_admin_cookie: Optional[str] = Header(None)):
     """管理员在平台上派一个任务，交给 Octop 执行，并把结果记成 task + step。"""
@@ -327,11 +363,33 @@ async def octop_run(request: Request, x_api_key: Optional[str] = None, x_admin_c
                  VALUES(?,?,?,?,?,?,?,?,?)""",
               (tid, "octop", title, "octop", "running", now(), "qwen3.5:9b", "", now()))
     c.commit(); c.close()
+    # 先做确定性检索（平台做工具，模型只做推理与写作）
+    search_query = ""
+    if body.get("template_id") == "verify":
+        search_query = str((body.get("params") or {}).get("公司名称", "")).strip()
+    elif body.get("search_query"):
+        search_query = str(body["search_query"]).strip()
+    if search_query:
+        t_search = time.time()
+        hits = run_search(search_query + " 工商信息 注册资本 成立时间", 6)
+        c = conn()
+        c.execute("""INSERT INTO task_steps(id,task_id,seq,tool,args_digest,duration_ms,ok,error_code,created_at)
+                     VALUES(?,?,?,?,?,?,?,?,?)""",
+                  (f"{tid}-s", tid, 1, "web.search", hashlib.sha256(search_query.encode()).hexdigest()[:16],
+                   int((time.time()-t_search)*1000), 1 if hits else 0, "" if hits else "no_result", now()))
+        c.commit(); c.close()
+        if hits:
+            prompt = (
+                "【重要】系统已经为你完成了联网检索，下面就是刚刚检索到的真实结果（不是让你再检索）。\n"
+                "请直接引用其中的公司名称、成立时间、地址、状态等事实，严禁声称「检索失败/超时/无数据」。\n"
+                "资料里没有的字段，写「资料未提供」，不要编造。\n\n"
+                "=== 检索到的真实资料 ===\n" + hits[:6000] + "\n\n=== 你的任务 ===\n" + prompt
+            )
     res = octop_chat(prompt)
     c = conn()
     c.execute("""INSERT INTO task_steps(id,task_id,seq,tool,args_digest,duration_ms,ok,error_code,created_at)
                  VALUES(?,?,?,?,?,?,?,?,?)""",
-              (f"{tid}-1", tid, 1, "octop.agent", hashlib.sha256(prompt.encode()).hexdigest()[:16],
+              (f"{tid}-1", tid, 2 if search_query else 1, "octop.agent", hashlib.sha256(prompt.encode()).hexdigest()[:16],
                res["elapsed_ms"], 1 if res["ok"] else 0, "" if res["ok"] else "octop_error", now()))
     if res["ok"]:
         c.execute("UPDATE tasks SET status='done', ended_at=?, summary=? WHERE id=?", (now(), res["reply"][:2000], tid))
