@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>砺 · 工作台</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">砺</div>
+      <div class="brand-text"><b>砺 · 工作台</b><span>本地干活的 AI 助手</span></div>
+    </div>
+    <nav class="nav">
+      <button class="nav-item active" data-view="home"><span class="ico"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg></span>概览</button>
+      <button class="nav-item" data-view="projects"><span class="ico"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span>我的项目</button>
+      <button class="nav-item" data-view="tasks"><span class="ico"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 10h8M8 14h5"/></svg></span>任务</button>
+      <button class="nav-item" data-view="skills"><span class="ico"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/><circle cx="12" cy="12" r="4.2"/></svg></span>技能库</button>
+      <button class="nav-item" data-view="console"><span class="ico"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="m7 10 3 2-3 2M13 14h4"/></svg></span>终端</button>
+      <button class="nav-item" data-view="settings"><span class="ico"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></span>设置</button>
+    </nav>
+    <div class="side-sec">
+      <div class="side-sec-t">快捷开始</div>
+      <button class="side-quick" data-quick="verify"><i></i>客户核查</button>
+      <button class="side-quick" data-quick="ledger"><i></i>台账整理</button>
+      <button class="side-quick" data-quick="bid"><i></i>标书初稿</button>
+    </div>
+    <div class="side-foot">
+      <div class="conn" id="connPill"><i></i><span>连接中…</span></div>
+      <div class="who" id="whoBox">—</div>
+      <div class="ver" id="verBox">v0.1.0</div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="crumb" id="crumb">概览</div>
+      <div class="top-actions">
+        <button class="btn ghost" id="btnRefresh">刷新</button>
+        <button class="btn primary" id="btnQuick">＋ 新建任务</button>
+      </div>
+    </header>
+
+    <section class="view active" id="view-home">
+      <div class="hero">
+        <div class="hero-left">
+          <h1>今天，让 AI 替你把活干了</h1>
+          <p>项目文件留在本机，云端只下达任务、回收结果、沉淀经验。</p>
+          <div class="hero-actions">
+            <button class="btn primary lg" data-quick="verify">客户核查</button>
+            <button class="btn lg" data-quick="ledger">台账整理</button>
+            <button class="btn lg" data-quick="bid">标书初稿</button>
+          </div>
+        </div>
+        <div class="hero-stats">
+          <div class="stat"><b id="stToday">-</b><span>今日任务</span></div>
+          <div class="stat"><b id="stSkills">-</b><span>可用技能</span></div>
+          <div class="stat"><b id="stProjects">-</b><span>项目</span></div>
+        </div>
+      </div>
+      <div class="grid2">
+        <div class="card">
+          <div class="card-h"><h3>最近任务</h3><button class="link" data-view="tasks">全部</button></div>
+          <div id="homeTasks" class="list"></div>
+        </div>
+        <div class="card">
+          <div class="card-h"><h3>运行日志</h3><button class="link" id="btnClearLog">清空</button></div>
+          <div id="logBox" class="logbox"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="view" id="view-projects">
+      <div class="card">
+        <div class="card-h">
+          <div><h3>我的项目</h3><p class="sub">每个项目 = 一个本地文件夹，AI 只在你登记的目录里干活。</p></div>
+          <button class="btn primary" id="btnAddProject">＋ 添加项目</button>
+        </div>
+        <div class="projects" id="projectGrid"></div>
+      </div>
+      <div class="card" id="fileCard" style="display:none">
+        <div class="card-h"><h3 id="fileTitle">文件</h3><div class="mini-actions"><button class="btn ghost" id="btnOpenFinder">在文件夹中打开</button><button class="btn ghost" id="btnUp">↑ 上一级</button></div></div>
+        <div class="filelist" id="fileList"></div>
+      </div>
+    </section>
+
+    <section class="view" id="view-tasks">
+      <div class="card">
+        <div class="card-h"><h3>任务</h3><span class="sub" id="taskHint">从云端拉取</span></div>
+        <div id="taskList" class="list"></div>
+      </div>
+      <div class="card" id="taskDetailCard" style="display:none">
+        <div class="card-h"><h3 id="tdTitle">任务详情</h3><button class="btn ghost" id="btnRunLocal">在本地执行</button></div>
+        <div id="tdMeta" class="meta"></div>
+        <div class="timeline" id="tdSteps"></div>
+      </div>
+    </section>
+
+    <section class="view" id="view-skills">
+      <div class="card">
+        <div class="card-h"><div><h3>技能库</h3><p class="sub">云端下发的 SOP，本地已同步的可以直接用。</p></div><button class="btn ghost" id="btnSyncSkills">同步技能</button></div>
+        <div id="skillList" class="list"></div>
+      </div>
+    </section>
+
+    <section class="view" id="view-console">
+      <div class="card">
+        <div class="card-h"><div><h3>本地终端</h3><p class="sub">只在项目目录内执行；命令需在设置里开启白名单。</p></div></div>
+        <div class="console-out" id="consoleOut">（输出会显示在这里）</div>
+        <div class="console-in"><input id="consoleCmd" placeholder="输入命令，例如 ls -la" /><button class="btn primary" id="btnRunCmd">运行</button></div>
+      </div>
+    </section>
+
+    <section class="view" id="view-settings">
+      <div class="card">
+        <div class="card-h"><h3>连接</h3></div>
+        <label class="field"><span>服务器地址</span><input id="cfgServer" placeholder="http://127.0.0.1:8000" /></label>
+        <label class="field"><span>员工 Key</span><input id="cfgKey" placeholder="dsh_xxx（从平台终端管理复制）" /></label>
+        <label class="field"><span>员工姓名</span><input id="cfgName" placeholder="张三" /></label>
+        <button class="btn primary" id="btnSaveConn">保存并测试连接</button>
+      </div>
+      <div class="card">
+        <div class="card-h"><h3>安全与权限</h3></div>
+        <label class="field"><span>项目根目录（默认工作区）</span><div class="row"><input id="cfgRoot" readonly /><button class="btn ghost" id="btnPickRoot">选择</button></div></label>
+        <label class="switch"><input type="checkbox" id="cfgAllowCmd" /><span>允许执行命令（默认关闭）</span></label>
+        <label class="field"><span>命令白名单（逗号分隔）</span><input id="cfgWhitelist" placeholder="python3,node,git,ls" /></label>
+        <button class="btn primary" id="btnSaveSec">保存</button>
+      </div>
+      <div class="card">
+        <div class="card-h"><h3>关于</h3></div>
+        <p class="sub">砺 · 工作台 v<span id="aboutVer">0.1.0</span> · 平台 <span id="aboutPlat">-</span></p>
+        <p class="sub">本地执行、云端管控：文件不出本机，任务与经验回流到团队平台。</p>
+      </div>
+    </section>
+  </main>
+</div>
+<div id="toast" class="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>
