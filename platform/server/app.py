@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS skills(
 CREATE TABLE IF NOT EXISTS experiences(
   id TEXT PRIMARY KEY, task_id TEXT, title TEXT, kind TEXT, content TEXT,
   status TEXT DEFAULT 'pending', skill_id TEXT, created_at TEXT);
+CREATE TABLE IF NOT EXISTS chat_sessions(
+  id TEXT PRIMARY KEY, session_id TEXT, thread_id TEXT, created_at TEXT);
 CREATE TABLE IF NOT EXISTS skill_deliveries(
   id TEXT PRIMARY KEY, terminal_id TEXT, skill_id TEXT, version INTEGER, delivered_at TEXT);
 CREATE TABLE IF NOT EXISTS audit_logs(
@@ -43,9 +45,14 @@ def now():
     return datetime.now(timezone.utc).isoformat()
 
 def conn():
-    c = sqlite3.connect(DB, timeout=10)
+    c = sqlite3.connect(DB, timeout=30)
     c.row_factory = sqlite3.Row
-    c.execute("PRAGMA journal_mode=WAL")
+    try:
+        c.execute("PRAGMA journal_mode=WAL")
+        c.execute("PRAGMA busy_timeout=3000")
+        c.execute("PRAGMA synchronous=NORMAL")
+    except Exception:
+        pass
     return c
 
 def init():
@@ -140,9 +147,15 @@ def auth(x_api_key: Optional[str]):
 
 def audit(actor, action, target="", detail=""):
     c = conn()
-    c.execute("INSERT INTO audit_logs(id,actor,action,target,detail,created_at) VALUES(?,?,?,?,?,?)",
-              (uuid.uuid4().hex, actor, action, target, detail, now()))
-    c.commit(); c.close()
+    try:
+        c.execute("INSERT INTO audit_logs(id,actor,action,target,detail,created_at) VALUES(?,?,?,?,?,?)",
+                  (uuid.uuid4().hex, actor, action, target, detail, now()))
+        c.commit()
+    except Exception:
+        try: c.rollback()
+        except Exception: pass
+    finally:
+        c.close()
 
 # ── 员工端接口 ──────────────────────────────────────────────
 @app.post("/v1/heartbeat")
@@ -150,9 +163,14 @@ async def heartbeat(request: Request, x_api_key: Optional[str] = Header(None)):
     t = auth(x_api_key)
     body = await request.json() if request.headers.get("content-length","0") != "0" else {}
     c = conn()
-    c.execute("UPDATE terminals SET last_seen=?, version=? WHERE id=?",
-              (now(), str(body.get("version") or t["version"]), t["id"]))
-    c.commit(); c.close()
+    try:
+        c.execute("UPDATE terminals SET last_seen=?, version=? WHERE id=?",
+                  (now(), str(body.get("version") or t["version"]), t["id"]))
+        c.commit()
+    except Exception as e:
+        print("heartbeat write skipped:", e)
+    finally:
+        c.close()
     return {"ok": True, "server_time": now(), "skills_version": latest_skill_version()}
 
 @app.post("/v1/tasks")
@@ -161,12 +179,21 @@ async def create_task(request: Request, x_api_key: Optional[str] = Header(None))
     b = await request.json()
     tid = b.get("id") or uuid.uuid4().hex
     c = conn()
-    c.execute("""INSERT INTO tasks(id,terminal_id,title,type,status,started_at,model,tokens_in,tokens_out,summary,created_at)
-                 VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
-              (tid, t["id"], b.get("title",""), b.get("type","general"), b.get("status","running"),
-               b.get("started_at") or now(), b.get("model",""), int(b.get("tokens_in") or 0),
-               int(b.get("tokens_out") or 0), b.get("summary",""), now()))
-    c.commit(); c.close()
+    try:
+        c.execute("""INSERT INTO tasks(id,terminal_id,title,type,status,started_at,model,tokens_in,tokens_out,summary,created_at)
+                     VALUES(?,?,?,?,?,?,?,?,?,?,?)
+                     ON CONFLICT(id) DO UPDATE SET title=excluded.title, status=excluded.status,
+                       ended_at=COALESCE(tasks.ended_at, tasks.ended_at), summary=COALESCE(excluded.summary, tasks.summary)""",
+                  (tid, t["id"], b.get("title",""), b.get("type","general"), b.get("status","running"),
+                   b.get("started_at") or now(), b.get("model",""), int(b.get("tokens_in") or 0),
+                   int(b.get("tokens_out") or 0), b.get("summary",""), now()))
+        c.commit()
+    except Exception as e:
+        print("create_task skipped:", e)
+        try: c.rollback()
+        except Exception: pass
+    finally:
+        c.close()
     audit(t["user_name"], "task.create", tid, b.get("title",""))
     return {"ok": True, "id": tid}
 
@@ -461,17 +488,19 @@ OCTOP_HOME = os.environ.get("DSH_OCTOP_HOME", "/opt/dsh-octop/data")
 OCTOP_BIN = os.environ.get("DSH_OCTOP_BIN", "/opt/dsh-octop/venv/bin/octop")
 OCTOP_AGENT = os.environ.get("DSH_OCTOP_AGENT", "VHSDB4")
 
-def octop_chat(prompt: str, agent_id: str = "", timeout: int = 240) -> dict:
+def octop_chat(prompt: str, agent_id: str = "", timeout: int = 240, session_key: str = "", thread_id: str = "") -> dict:
     """调用 Octop 助理执行一句话任务，返回 {ok, reply, elapsed_ms}。"""
     agent_id = agent_id or OCTOP_AGENT
     env = dict(os.environ)
     env["HOME"] = OCTOP_HOME
     t0 = time.time()
     try:
-        p = subprocess.run(
-            [OCTOP_BIN, "chats", "send", prompt, "--agent", agent_id, "--plain"],
-            capture_output=True, text=True, timeout=timeout, env=env,
-        )
+        argv = [OCTOP_BIN, "chats", "send", prompt, "--agent", agent_id, "--plain"]
+        if thread_id:
+            argv += ["--thread-id", thread_id]
+        elif session_key:
+            argv += ["--session-key", session_key]
+        p = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, env=env)
         out = (p.stdout or "").strip()
         err = (p.stderr or "").strip()
         # 去掉末尾的耗时行（形如 "  ────... 2.8s"）
@@ -623,6 +652,58 @@ async def mcp_get(request: Request):
 @app.delete("/mcp")
 async def mcp_delete(request: Request):
     return Response("", status_code=204)
+OCTOP_API = os.environ.get("DSH_OCTOP_API", "http://127.0.0.1:18090")
+OCTOP_USER = os.environ.get("DSH_OCTOP_USER", "admin")
+OCTOP_PASS = os.environ.get("DSH_OCTOP_PASS", "Dsh-OCTOP-2026-a7f3")
+_octop_token = {"t": "", "exp": 0.0}
+
+def octop_api_token() -> str:
+    import urllib.request as _u
+    if _octop_token["t"] and time.time() < _octop_token["exp"]:
+        return _octop_token["t"]
+    req = _u.Request(OCTOP_API + "/api/auth/login",
+                     data=json.dumps({"username": OCTOP_USER, "password": OCTOP_PASS}).encode(),
+                     headers={"Content-Type": "application/json"})
+    d = json.loads(_u.urlopen(req, timeout=15).read())
+    _octop_token["t"] = d.get("access_token", "")
+    _octop_token["exp"] = time.time() + 3000
+    return _octop_token["t"]
+
+def octop_create_thread() -> str:
+    """通过 Octop HTTP 接口新建独立会话线程。"""
+    import urllib.request as _u
+    req = _u.Request(OCTOP_API + "/api/agents/" + OCTOP_AGENT + "/threads",
+                     data=b"{}", method="POST",
+                     headers={"Content-Type": "application/json", "Authorization": "Bearer " + octop_api_token()})
+    d = json.loads(_u.urlopen(req, timeout=30).read())
+    return d.get("thread_id", "")
+
+def thread_for_session(session_id: str) -> str:
+    """每个客户端会话对应一个独立的 Octop thread（没有就新建）。"""
+    if not session_id:
+        return ""
+    c = conn()
+    row = c.execute("SELECT thread_id FROM chat_sessions WHERE session_id=?", (session_id,)).fetchone()
+    c.close()
+    if row and row["thread_id"]:
+        return row["thread_id"]
+    tid = ""
+    try:
+        tid = octop_create_thread()
+    except Exception as e:
+        print("create thread failed:", e)
+    if tid:
+        c = conn()
+        try:
+            c.execute("INSERT OR REPLACE INTO chat_sessions(id,session_id,thread_id,created_at) VALUES(?,?,?,?)",
+                      (uuid.uuid4().hex, session_id, tid, now()))
+            c.commit()
+        except Exception:
+            pass
+        finally:
+            c.close()
+    return tid
+
 @app.post("/v1/chat")
 async def chat_with_assistant(request: Request, x_api_key: Optional[str] = Header(None)):
     """客户端聊天：员工终端 Key 直接和云端助理对话（不建任务，轻量）。"""
@@ -635,7 +716,9 @@ async def chat_with_assistant(request: Request, x_api_key: Optional[str] = Heade
     msg = (b.get("message") or "").strip()
     if not msg:
         raise HTTPException(400, "message required")
-    res = octop_chat(msg, timeout=240)
+    sid = str(b.get("session_id") or "")
+    tid = await _asyncio.to_thread(thread_for_session, sid) if sid else ""
+    res = await _asyncio.to_thread(octop_chat, msg, "", 240, "", tid)
     return {"ok": res["ok"], "reply": res["reply"], "elapsed_ms": res["elapsed_ms"], "error": res.get("error", ""),
             "who": (terminal["user_name"] if terminal else "admin")}
 
@@ -681,7 +764,7 @@ async def octop_run(request: Request, x_api_key: Optional[str] = Header(None), x
         search_query = str(body["search_query"]).strip()
     if search_query:
         t_search = time.time()
-        hits = sanitize_hits(run_search(search_query + " 工商信息 注册资本 成立时间", 6))
+        hits = sanitize_hits(await _asyncio.to_thread(run_search, search_query + " 工商信息 注册资本 成立时间", 6))
         c = conn()
         c.execute("""INSERT INTO task_steps(id,task_id,seq,tool,args_digest,duration_ms,ok,error_code,created_at)
                      VALUES(?,?,?,?,?,?,?,?,?)""",
@@ -724,7 +807,7 @@ async def octop_run(request: Request, x_api_key: Optional[str] = Header(None), x
                   (f"{tid}-f", tid, seq, "file.attach", hashlib.sha256(file_block.encode()).hexdigest()[:16], 0, 1, "", now()))
         c.commit(); c.close()
         seq += 1
-    res = octop_chat(prompt)
+    res = await _asyncio.to_thread(octop_chat, prompt)
     c = conn()
     c.execute("""INSERT INTO task_steps(id,task_id,seq,tool,args_digest,duration_ms,ok,error_code,created_at)
                  VALUES(?,?,?,?,?,?,?,?,?)""",
@@ -743,7 +826,7 @@ async def octop_status(request: Request):
     require_admin(request)
     env = dict(os.environ); env["HOME"] = OCTOP_HOME
     try:
-        p = subprocess.run([OCTOP_BIN, "--json", "agent", "list"], capture_output=True, text=True, timeout=20, env=env)
+        p = await _asyncio.to_thread(subprocess.run, [OCTOP_BIN, "--json", "agent", "list"], capture_output=True, text=True, timeout=20, env=env)
         return {"ok": True, "agents": json.loads(p.stdout or "[]")}
     except Exception as e:
         return {"ok": False, "error": str(e)[:300]}

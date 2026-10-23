@@ -100,6 +100,16 @@ input{font-family:inherit}
 .switch{display:flex;align-items:center;gap:10px;font-size:13px;margin:6px 0 14px;color:#374151}
 .switch input{width:16px;height:16px;accent-color:var(--brand)}
 .chat-card{display:flex;flex-direction:column;height:calc(100vh - 130px);padding:0;overflow:hidden}
+.chat-layout{display:flex;height:100%}
+.chat-side{width:200px;flex:0 0 200px;border-right:1px solid var(--line);padding:14px 12px;display:flex;flex-direction:column;gap:10px;background:#fbfcfe}
+.chat-sessions{display:flex;flex-direction:column;gap:4px;overflow-y:auto}
+.sess{padding:9px 10px;border-radius:10px;font-size:12.5px;color:#374151;cursor:pointer;display:flex;justify-content:space-between;gap:6px;align-items:center}
+.sess:hover{background:#f1f4f9}
+.sess.active{background:var(--brand-soft);color:var(--brand-ink);font-weight:600}
+.sess .del{opacity:0;font-size:11px;color:#9aa2af}
+.sess:hover .del{opacity:1}
+.sess b{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;max-width:130px}
+.chat-main{flex:1;display:flex;flex-direction:column;min-width:0}
 .chat-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 20px;border-bottom:1px solid var(--line)}
 .chat-head h3{font-size:15px}
 .chat-proj{width:220px;border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:12.5px;background:#fbfcfe}

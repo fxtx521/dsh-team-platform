@@ -46,6 +46,12 @@
 
     <section class="view" id="view-chat">
       <div class="card chat-card">
+        <div class="chat-layout">
+          <div class="chat-side">
+            <button class="btn primary" id="btnNewChat" style="width:100%">＋ 新会话</button>
+            <div class="chat-sessions" id="chatSessions"></div>
+          </div>
+          <div class="chat-main">
         <div class="chat-head">
           <div><h3>和助理对话</h3><p class="sub">直接说要做的事，它会调用本地工具读写你的项目文件。</p></div>
           <select id="chatProject" class="chat-proj"></select>
@@ -54,6 +60,8 @@
         <div class="chat-in">
           <textarea id="chatInput" rows="2" placeholder="例如：把 D 盘这个项目里的报价单整理成一张表（Enter 发送，Shift+Enter 换行）"></textarea>
           <button class="btn primary" id="chatSend">发送</button>
+        </div>
+          </div>
         </div>
       </div>
     </section>
@@ -151,6 +159,14 @@
     </section>
   </main>
 </div>
+<div class="modal-mask" id="nameModal">
+  <div class="modal" style="width:420px">
+    <div class="modal-h"><h3 id="nmTitle">起个名字</h3><button class="modal-x" id="nmClose">✕</button></div>
+    <div class="modal-b"><input id="nmInput" placeholder="例如：鼎晟机械核查" style="width:100%;border:1px solid #e9ecf2;border-radius:11px;padding:11px 13px;font-size:13px;outline:none" /></div>
+    <div class="modal-f"><button class="btn ghost" id="nmCancel">取消</button><button class="btn primary" id="nmOk">确定</button></div>
+  </div>
+</div>
+
 <div class="modal-mask" id="taskModal">
   <div class="modal">
     <div class="modal-h"><h3 id="mTitle">执行任务</h3><button class="modal-x" id="mClose">✕</button></div>

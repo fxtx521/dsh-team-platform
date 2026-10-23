@@ -13,7 +13,7 @@ contextBridge.exposeInMainWorld('wb', {
   reveal: (f) => ipcRenderer.invoke('project:reveal', f),
   runCmd: (p) => ipcRenderer.invoke('cmd:run', p),
   heartbeat: () => ipcRenderer.invoke('cloud:heartbeat'),
-  chat: (m) => ipcRenderer.invoke('cloud:chat', { message: m }),
+  chat: (m, sessionId) => ipcRenderer.invoke('cloud:chat', { message: m, sessionId }),
   runTask: (p) => ipcRenderer.invoke('cloud:runTask', p),
   uploadArtifact: (p) => ipcRenderer.invoke('cloud:uploadArtifact', p),
   saveOutput: (p) => ipcRenderer.invoke('project:saveOutput', p),

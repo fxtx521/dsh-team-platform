@@ -4,6 +4,37 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { execFile } = require('child_process');
+const http = require('http');
+const https = require('https');
+
+// 轻量 HTTP 请求（Node fetch 在本机直连会卡住，改用 http 模块）
+function httpReq(method, urlStr, body, headers = {}, timeoutMs = 15000) {
+  return new Promise((resolve) => {
+    let u;
+    try { u = new URL(urlStr); } catch (e) { return resolve({ ok: false, status: 0, data: { error: 'bad url' } }); }
+    const mod = u.protocol === 'https:' ? https : http;
+    const payload = body ? Buffer.from(JSON.stringify(body)) : null;
+    const req = mod.request({
+      hostname: u.hostname, port: u.port || (u.protocol === 'https:' ? 443 : 80),
+      path: u.pathname + u.search, method,
+      headers: { ...headers, ...(payload ? { 'Content-Length': payload.length } : {}) },
+      timeout: timeoutMs,
+    }, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => {
+        const text = Buffer.concat(chunks).toString('utf8');
+        let data = null;
+        try { data = JSON.parse(text); } catch { data = { raw: text }; }
+        resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, data });
+      });
+    });
+    req.on('timeout', () => { req.destroy(new Error('timeout')); });
+    req.on('error', (e) => resolve({ ok: false, status: 0, data: { error: e.message } }));
+    if (payload) req.write(payload);
+    req.end();
+  });
+}
 
 const CFG_PATH = () => path.join(app.getPath('userData'), 'config.json');
 const DEFAULT_CFG = {
@@ -12,8 +43,8 @@ const DEFAULT_CFG = {
   employeeName: '演示员工',
   projectRoot: path.join(os.homedir(), 'Documents', '砺项目'),
   projects: [],          // [{id,name,dir,createdAt}]
-  cmdWhitelist: ['python3', 'node', 'git', 'ls', 'dir', 'echo'],
-  allowCommand: false,
+  cmdWhitelist: ['python3', 'node', 'git', 'ls', 'cat', 'echo', 'head', 'wc'],
+  allowCommand: true,
   autoLaunch: false,
   theme: 'light',
 };
@@ -35,6 +66,8 @@ let tray = null;
 let state = { online: false, lastBeat: null, pending: 0, running: 0, log: [] };
 
 function log(line) {
+  const text = new Date().toISOString() + ' ' + String(line) + '\n';
+  try { fs.appendFileSync(path.join(app.getPath('userData'), 'app.log'), text); } catch {}
   const rec = { t: new Date().toISOString(), line: String(line) };
   state.log.unshift(rec);
   if (state.log.length > 500) state.log.pop();
@@ -74,22 +107,8 @@ function createTray() {
 // ── 云端通信 ──────────────────────────────────────────────
 async function api(method, p, body) {
   const cfg = readCfg();
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 12000);
-  try {
-    const res = await fetch(cfg.serverUrl.replace(/\/$/, '') + p, {
-      method,
-      headers: { 'Content-Type': 'application/json', 'X-API-Key': cfg.apiKey },
-      body: body ? JSON.stringify(body) : undefined,
-      signal: ctrl.signal,
-    });
-    const text = await res.text();
-    let data = null;
-    try { data = JSON.parse(text); } catch { data = { raw: text }; }
-    return { ok: res.ok, status: res.status, data };
-  } catch (e) {
-    return { ok: false, status: 0, data: { error: e.message } };
-  } finally { clearTimeout(timer); }
+  return httpReq(method, cfg.serverUrl.replace(/\/$/, '') + p, body,
+    { 'Content-Type': 'application/json', 'X-API-Key': cfg.apiKey }, 20000);
 }
 
 async function heartbeat() {
@@ -100,7 +119,7 @@ async function heartbeat() {
     log('心跳正常 · skills_version=' + (r.data.skills_version ?? '-'));
     await syncSkills();
   } else {
-    log('心跳失败: ' + (r.data.error || r.status));
+    log('心跳失败: status=' + r.status + ' ' + JSON.stringify(r.data).slice(0, 160));
   }
   broadcast();
 }
@@ -216,19 +235,21 @@ ipcMain.handle('cloud:skillStats', async () => {
 // ── 本地工具执行器（长轮询：等云端 AI 派活，在本地真干）─────
 let pollBusy = false;
 let pollStopped = false;
+// 当前对话轮次的本地工具步骤（用于上报任务/经验沉淀）
+let turn = { id: '', startedAt: '', steps: [], title: '' };
+function newTurn(title) {
+  turn = { id: 'chat-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6), startedAt: new Date().toISOString(), steps: [], title: String(title || '').slice(0, 80) };
+  return turn;
+}
 
 async function pollOnce() {
   const cfg = readCfg();
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 25000);
   let call = null;
   try {
-    const res = await fetch(cfg.serverUrl.replace(/\/$/, '') + '/v1/local/poll?timeout=15', {
-      method: 'POST', headers: { 'X-API-Key': cfg.apiKey, 'Content-Type': 'application/json' }, signal: ctrl.signal,
-    });
-    const d = await res.json();
-    call = d.call;
-  } catch (e) { /* 网络抖动忽略 */ } finally { clearTimeout(timer); }
+    const r = await httpReq('POST', cfg.serverUrl.replace(/\/$/, '') + '/v1/local/poll?timeout=15', {},
+      { 'X-API-Key': cfg.apiKey, 'Content-Type': 'application/json' }, 25000);
+    call = r.data && r.data.call;
+  } catch (e) { /* 网络抖动忽略 */ }
   if (!call) return;
   const { id, tool, args } = call;
   let ok = true, output = '';
@@ -263,11 +284,11 @@ async function pollOnce() {
     } else throw new Error('未知工具 ' + tool);
   } catch (e) { ok = false; output = ''; log('本地工具失败: ' + tool + ' · ' + e.message); }
   if (ok) log('本地工具执行: ' + tool);
+  try { turn.steps.push({ tool: tool, args_digest: '', duration_ms: 0, ok: ok ? 1 : 0, error_code: ok ? '' : 'tool_error' }); } catch {}
   try {
-    await fetch(cfg.serverUrl.replace(/\/$/, '') + '/v1/local/result', {
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Key': cfg.apiKey },
-      body: JSON.stringify({ id, ok, output, error: ok ? '' : '执行失败' }),
-    });
+    await httpReq('POST', cfg.serverUrl.replace(/\/$/, '') + '/v1/local/result',
+      { id, ok, output, error: ok ? '' : '执行失败' },
+      { 'Content-Type': 'application/json', 'X-API-Key': cfg.apiKey }, 15000);
   } catch (e) { log('回传结果失败: ' + e.message); }
   broadcast();
 }
@@ -286,9 +307,22 @@ function startPoller() {
   loop();
 }
 
-ipcMain.handle('cloud:chat', async (_e, { message }) => {
-  const r = await api('POST', '/v1/chat', { message });
+ipcMain.handle('cloud:chat', async (_e, { message, sessionId }) => {
+  const t = newTurn(message);
+  const r = await api('POST', '/v1/chat', { message, session_id: sessionId || '' });
   if (r.ok) log('对话完成 · ' + (r.data.elapsed_ms || 0) + 'ms');
+  // 上报这一轮（任务 + 本地步骤 + 摘要），让云端能沉淀经验
+  try {
+    const reply = (r.data && r.data.reply) || '';
+    await api('POST', '/v1/tasks', {
+      id: t.id, title: t.title || '对话任务', type: 'chat', status: 'done',
+      started_at: t.startedAt, summary: reply.slice(0, 1500),
+    });
+    if (t.steps.length) {
+      await api('POST', '/v1/tasks/' + encodeURIComponent(t.id) + '/steps', { steps: t.steps });
+    }
+    log('已上报任务 ' + t.id + ' · 步骤 ' + t.steps.length);
+  } catch (e) { log('上报任务失败: ' + e.message); }
   return r;
 });
 
@@ -345,6 +379,8 @@ function isInside(roots, target) {
 app.whenReady().then(() => {
   createWindow();
   createTray();
+  const _c = readCfg();
+  log('启动 · server=' + _c.serverUrl + ' ref=' + (process.env.ELECTRON_RUN_AS_NODE || 'no') + ' pid=' + process.pid);
   setTimeout(heartbeat, 1500);
   setInterval(heartbeat, 60 * 1000);
   setTimeout(startPoller, 2500);

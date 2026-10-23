@@ -63,6 +63,22 @@ let curRel = '.';
 let curTasks = [];
 let curSkills = [];
 
+let _nameCb = null;
+function askName(title, suggest, cb) {
+  _nameCb = cb;
+  $('#nmTitle').textContent = title || '起个名字';
+  $('#nmInput').value = suggest || '';
+  $('#nameModal').classList.add('show');
+  setTimeout(() => { const el = $('#nmInput'); el.focus(); el.select(); }, 50);
+}
+function bindNameModal() {
+  const close = () => $('#nameModal').classList.remove('show');
+  $('#nmClose').onclick = close;
+  $('#nmCancel').onclick = close;
+  $('#nmOk').onclick = () => { const v = $('#nmInput').value.trim(); close(); if (_nameCb) { const cb = _nameCb; _nameCb = null; cb(v); } };
+  $('#nmInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#nmOk').click(); });
+}
+
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('show'), 2200); }
 function go(view) {
   curView = view;
@@ -238,29 +254,84 @@ function bindModal() {
 
 // ── 对话 ────────────────────────────────────────────────
 let chatMsgs = [];
+
+// ── 会话管理（多会话，持久化到 localStorage）────────────────
+const SESS_KEY = 'lishi.sessions.v1';
+let sessions = [];
+let curSession = null;
+function loadSessions() {
+  try { sessions = JSON.parse(localStorage.getItem(SESS_KEY) || '[]'); } catch { sessions = []; }
+  if (!Array.isArray(sessions) || !sessions.length) sessions = [];
+  if (!sessions.length) sessions.push(newSessionObj('新会话'));
+  curSession = sessions[0].id;
+}
+function newSessionObj(title) { return { id: 's' + Date.now().toString(36), title: title || '新会话', msgs: [], createdAt: new Date().toISOString() }; }
+function saveSessions() { try { localStorage.setItem(SESS_KEY, JSON.stringify(sessions)); } catch {} }
+function getSession() { return sessions.find((s) => s.id === curSession) || sessions[0]; }
+function renderSessions() {
+  const box = $('#chatSessions'); if (!box) return;
+  box.innerHTML = sessions.map((s) => `<div class="sess ${s.id === curSession ? 'active' : ''}" data-sid="${s.id}"><b>${esc(s.title)}</b><span class="del" data-ren="${s.id}" title="重命名">✎</span><span class="del" data-del="${s.id}">✕</span></div>`).join('');
+  box.querySelectorAll('[data-sid]').forEach((el) => {
+    el.onclick = (e) => {
+      if (e.target.dataset.del) return;
+      curSession = el.dataset.sid; saveSessions(); renderSessions(); renderChat();
+    };
+  });
+  box.querySelectorAll('[data-ren]').forEach((el) => {
+    el.onclick = (e) => {
+      e.stopPropagation();
+      const id = el.dataset.ren;
+      const s = sessions.find((x) => x.id === id); if (!s) return;
+      askName('重命名会话', s.title, (v) => { if (v) { s.title = v; saveSessions(); renderSessions(); } });
+    };
+  });
+  box.querySelectorAll('[data-del]').forEach((el) => {
+    el.onclick = (e) => {
+      e.stopPropagation();
+      const id = el.dataset.del;
+      sessions = sessions.filter((s) => s.id !== id);
+      if (!sessions.length) sessions.push(newSessionObj('新会话'));
+      if (curSession === id) curSession = sessions[0].id;
+      saveSessions(); renderSessions(); renderChat();
+    };
+  });
+}
 function renderChat() {
+  const s = getSession(); if (!s) return;
   const box = $('#chatBody');
-  box.innerHTML = chatMsgs.map((m) => `<div class="msg ${m.role}">${esc(m.text)}${m.meta ? `<span class="meta">${esc(m.meta)}</span>` : ''}</div>`).join('');
-  if (!chatMsgs.length) box.innerHTML = '<div class="msg ai">你好，我是团队 AI 助理。<br>直接说你要做什么——比如「把项目里的报价单整理成表」，我会在你本地文件夹里读写文件。</div>';
+  box.innerHTML = (s.msgs || []).map((m) => `<div class="msg ${m.role}">${esc(m.text)}${m.meta ? `<span class="meta">${esc(m.meta)}</span>` : ''}</div>`).join('');
+  if (!s.msgs || !s.msgs.length) box.innerHTML = '<div class="msg ai">你好，我是团队 AI 助理。<br>直接说你要做什么——比如「把项目里的报价单整理成表」，我会在你本地文件夹里读写文件。</div>';
   box.scrollTop = box.scrollHeight;
+  renderSessions();
 }
 async function sendChat() {
   const inp = $('#chatInput');
   const text = (inp.value || '').trim();
   if (!text) return;
   inp.value = '';
-  chatMsgs.push({ role: 'user', text });
+  const s = getSession();
+  if (!s.msgs || !s.msgs.length) s.title = text.slice(0, 18);
+  s.msgs.push({ role: 'user', text });
+  saveSessions();
   renderChat();
   const box = $('#chatBody');
   const tip = document.createElement('div');
   tip.className = 'typing'; tip.textContent = '助理思考中…'; box.appendChild(tip); box.scrollTop = box.scrollHeight;
-  const r = await api.chat(text);
+  const r = await api.chat(text, s.id);
   tip.remove();
-  if (r && r.ok) chatMsgs.push({ role: 'ai', text: r.data.reply || '(空)', meta: (r.data.elapsed_ms || 0) + 'ms' });
-  else chatMsgs.push({ role: 'ai', text: '出错了：' + JSON.stringify((r && r.data) || {}).slice(0, 200) });
+  const sess = getSession();
+  if (r && r.ok) sess.msgs.push({ role: 'ai', text: r.data.reply || '(空)', meta: (r.data.elapsed_ms || 0) + 'ms' });
+  else sess.msgs.push({ role: 'ai', text: '出错了：' + JSON.stringify((r && r.data) || {}).slice(0, 200) });
+  saveSessions();
   renderChat();
 }
 function bindChat() {
+  if (!sessions.length) loadSessions();
+  const nb = $('#btnNewChat');
+  if (nb && !nb._bound) {
+    nb._bound = true;
+    nb.onclick = () => { sessions.unshift(newSessionObj('新会话')); curSession = sessions[0].id; saveSessions(); renderSessions(); renderChat(); };
+  }
   const sel = $('#chatProject');
   const cfg = SNAP?.cfg || {};
   sel.innerHTML = (cfg.projects || []).map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('') || '<option value="">（先添加项目）</option>';
@@ -272,6 +343,7 @@ function bindChat() {
 }
 function bind() {
   bindModal();
+  bindNameModal();
   bindChat();
   $$('.nav-item').forEach((b) => b.onclick = () => go(b.dataset.view));
   $$('[data-view]').forEach((b) => { if (b.classList.contains('link') || b.tagName === 'BUTTON' && !b.classList.contains('nav-item')) b.onclick = () => go(b.dataset.view); });
@@ -280,8 +352,12 @@ function bind() {
   $$('[data-quick]').forEach((b) => b.onclick = () => openTaskModal(b.dataset.quick || 'verify'));
   $('#btnAddProject').onclick = async () => {
     const dir = await api.pickFolder(); if (!dir) return;
-    const name = prompt('给这个项目起个名字：', dir.split(/[\\/]/).pop()) || dir;
-    await api.addProject({ name, dir }); await refresh(); toast('已添加项目');
+    const suggest = dir.split(/[\\/]/).pop() || '新项目';
+    askName('项目名称', suggest, async (name) => {
+      await api.addProject({ name: name || suggest, dir });
+      await refresh();
+      toast('已添加项目：' + (name || suggest));
+    });
   };
   $('#btnClearLog').onclick = () => { if (SNAP) { SNAP.state.log = []; } $('#logBox').innerHTML = ''; };
   $('#btnRunCmd').onclick = async () => {
@@ -308,6 +384,7 @@ function bind() {
   api.onGoto && api.onGoto((v) => go(v));
 }
 (async function boot() {
+  loadSessions();
   bind();
   await refresh();
   const h = (location.hash || '').replace('#', '');
