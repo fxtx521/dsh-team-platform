@@ -507,6 +507,93 @@ def run_search(q: str, n: int = 6, timeout: int = 60) -> str:
     except Exception:
         return ""
 
+
+# ── 本地工作台接入（长轮询） + MCP 网关 ──────────────────
+import asyncio as _asyncio
+_LOCAL_CALLS = {}        # call_id -> {"event": asyncio.Event, "result": Any, "tool": str, "args": dict, "terminal": str}
+_LOCAL_QUEUE = []        # [(call_id, payload)] 待员工端拉取
+_LOCAL_LOCK = _asyncio.Lock()
+
+LOCAL_TOOLS = [
+    {"name": "local_list_dir", "description": "列出员工本地项目目录下的文件（仅限已登记目录）",
+     "inputSchema": {"type": "object", "properties": {"dir": {"type": "string", "description": "目录绝对路径"}}, "required": ["dir"]}},
+    {"name": "local_read_file", "description": "读取员工本地文件内容（仅限已登记目录，最大 200KB）",
+     "inputSchema": {"type": "object", "properties": {"file": {"type": "string"}}, "required": ["file"]}},
+    {"name": "local_write_file", "description": "在员工本地写入文件（仅限已登记目录）",
+     "inputSchema": {"type": "object", "properties": {"file": {"type": "string"}, "content": {"type": "string"}}, "required": ["file", "content"]}},
+    {"name": "local_run_cmd", "description": "在员工本地执行命令（需员工在客户端开启命令白名单）",
+     "inputSchema": {"type": "object", "properties": {"cmd": {"type": "string"}, "cwd": {"type": "string"}}, "required": ["cmd"]}},
+]
+
+@app.post("/v1/local/poll")
+async def local_poll(request: Request, x_api_key: Optional[str] = Header(None), timeout: int = 20):
+    """员工端长轮询：拉取云端下发的本地工具调用。"""
+    t = auth(x_api_key)
+    deadline = time.time() + max(1, min(timeout, 30))
+    while time.time() < deadline:
+        async with _LOCAL_LOCK:
+            for i, (cid, payload) in enumerate(_LOCAL_QUEUE):
+                if payload.get("terminal") in ("", t["id"]) or payload.get("terminal") == t["id"]:
+                    _LOCAL_QUEUE.pop(i)
+                    return {"ok": True, "call": {"id": cid, **payload}}
+        await _asyncio.sleep(0.5)
+    return {"ok": True, "call": None}
+
+@app.post("/v1/local/result")
+async def local_result(request: Request, x_api_key: Optional[str] = Header(None)):
+    """员工端回传本地工具执行结果。"""
+    auth(x_api_key)
+    b = await request.json()
+    cid = str(b.get("id") or "")
+    entry = _LOCAL_CALLS.get(cid)
+    if not entry:
+        raise HTTPException(404, "call not found")
+    entry["result"] = {"ok": bool(b.get("ok")), "output": b.get("output") or "", "error": b.get("error") or ""}
+    entry["event"].set()
+    return {"ok": True}
+
+async def _dispatch_local(tool: str, args: dict, timeout: float = 60.0):
+    cid = uuid.uuid4().hex
+    ev = _asyncio.Event()
+    _LOCAL_CALLS[cid] = {"event": ev, "result": None, "tool": tool, "args": args, "terminal": ""}
+    async with _LOCAL_LOCK:
+        _LOCAL_QUEUE.append((cid, {"tool": tool, "args": args, "terminal": ""}))
+    try:
+        await _asyncio.wait_for(ev.wait(), timeout=timeout)
+    except _asyncio.TimeoutError:
+        _LOCAL_CALLS.pop(cid, None)
+        return {"ok": False, "error": "员工端未响应（可能未启动客户端）"}
+    r = _LOCAL_CALLS.pop(cid, {}).get("result")
+    return r or {"ok": False, "error": "no result"}
+
+@app.post("/mcp")
+async def mcp_endpoint(request: Request):
+    """MCP（streamable HTTP）网关：把 Octop 的工具调用转发到员工本地工作台。"""
+    body = await request.json()
+    method = body.get("method") or ""
+    rid = body.get("id")
+    def resp(result):
+        return {"jsonrpc": "2.0", "id": rid, "result": result}
+    if method == "initialize":
+        return resp({"protocolVersion": "2024-11-05", "capabilities": {"tools": {}},
+                     "serverInfo": {"name": "lishi-local-workbench", "version": "0.1.0"}})
+    if method in ("notifications/initialized", "initialized"):
+        return JSONResponse({}, status_code=202)
+    if method == "tools/list":
+        return resp({"tools": LOCAL_TOOLS})
+    if method == "tools/call":
+        params = body.get("params") or {}
+        name = params.get("name") or ""
+        args = params.get("arguments") or {}
+        if name not in [t["name"] for t in LOCAL_TOOLS]:
+            return {"jsonrpc": "2.0", "id": rid, "error": {"code": -32602, "message": "unknown tool: " + name}}
+        r = await _dispatch_local(name, args)
+        text = r.get("output") if r.get("ok") else ("错误: " + str(r.get("error")))
+        return resp({"content": [{"type": "text", "text": str(text)[:20000]}], "isError": not r.get("ok")})
+    if method == "ping":
+        return resp({})
+    return {"jsonrpc": "2.0", "id": rid, "error": {"code": -32601, "message": "method not found"}}
+
 @app.post("/v1/octop/run")
 async def octop_run(request: Request, x_api_key: Optional[str] = Header(None), x_admin_cookie: Optional[str] = Header(None)):
     """派任务给 Octop 执行：管理员（网页）或员工终端（X-API-Key）都可以调用。"""
