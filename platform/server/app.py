@@ -622,9 +622,19 @@ async def summary(request: Request, x_admin_key: Optional[str] = Header(None)):
                           FROM tasks t LEFT JOIN terminals tr ON tr.id=t.terminal_id
                           ORDER BY t.created_at DESC LIMIT 20""").fetchall()
     steps = c.execute("SELECT * FROM task_steps ORDER BY created_at DESC LIMIT 200").fetchall()
+    octop_today = c.execute("SELECT count(*) n FROM tasks WHERE type='octop' AND date(created_at)=?", (today,)).fetchone()["n"]
+    octop_total = c.execute("SELECT count(*) n FROM tasks WHERE type='octop'").fetchone()["n"]
+    recent_octop = c.execute("""SELECT id,title,status,created_at FROM tasks WHERE type='octop'
+                                ORDER BY created_at DESC LIMIT 5""").fetchall()
+    skills_n = c.execute("SELECT count(*) n FROM skills").fetchone()["n"]
+    deliveries_n = c.execute("SELECT count(*) n FROM skill_deliveries").fetchone()["n"]
+    pending_exp = c.execute("SELECT count(*) n FROM experiences WHERE status='pending'").fetchone()["n"]
     c.close()
     return {"ok": True, "stats": {"tasks_today": tasks_today, "online": online, "terminals": len(terminals),
                                  "tokens": tokens, "artifacts": artifacts},
+            "octop": {"today": octop_today, "total": octop_total,
+                      "recent": [dict(x) for x in recent_octop]},
+            "skills": {"count": skills_n, "deliveries": deliveries_n, "pending_experience": pending_exp},
             "terminals": [dict(t) for t in terminals], "recent_tasks": [dict(r) for r in recent],
             "steps": [dict(s) for s in steps]}
 
@@ -792,6 +802,69 @@ async function save(){
 load();
 </script></body></html>"""
 
+
+@app.get("/v1/report/weekly")
+async def weekly_report(request: Request, days: int = 7):
+    """周报：最近 N 天的任务、工具、产物、经验、技能下发汇总。"""
+    require_admin(request)
+    import datetime as _dt
+    since = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=days)).isoformat()
+    c = conn()
+    total = c.execute("SELECT count(*) n FROM tasks WHERE created_at>=?", (since,)).fetchone()["n"]
+    done = c.execute("SELECT count(*) n FROM tasks WHERE created_at>=? AND status='done'", (since,)).fetchone()["n"]
+    failed = c.execute("SELECT count(*) n FROM tasks WHERE created_at>=? AND status='failed'", (since,)).fetchone()["n"]
+    octop = c.execute("SELECT count(*) n FROM tasks WHERE created_at>=? AND type='octop'", (since,)).fetchone()["n"]
+    arts = c.execute("SELECT count(*) n FROM artifacts WHERE created_at>=?", (since,)).fetchone()["n"]
+    exp_new = c.execute("SELECT count(*) n FROM experiences WHERE created_at>=?", (since,)).fetchone()["n"]
+    exp_ok = c.execute("SELECT count(*) n FROM experiences WHERE created_at>=? AND status='approved'", (since,)).fetchone()["n"]
+    deliv = c.execute("SELECT count(*) n FROM skill_deliveries WHERE delivered_at>=?", (since,)).fetchone()["n"]
+    tools = c.execute("""SELECT tool, count(*) n, ROUND(AVG(duration_ms)) avg_ms, SUM(ok) ok_n
+                        FROM task_steps WHERE created_at>=? GROUP BY tool ORDER BY n DESC LIMIT 12""", (since,)).fetchall()
+    by_user = c.execute("""SELECT COALESCE(tr.user_name, CASE WHEN t.terminal_id='octop' THEN 'Octop 助理' ELSE '未知' END) who,
+                                 count(*) n FROM tasks t LEFT JOIN terminals tr ON tr.id=t.terminal_id
+                          WHERE t.created_at>=? GROUP BY who ORDER BY n DESC LIMIT 10""", (since,)).fetchall()
+    c.close()
+    return {"ok": True, "days": days,
+            "summary": {"tasks": total, "done": done, "failed": failed, "octop": octop,
+                        "artifacts": arts, "experience_new": exp_new, "experience_approved": exp_ok,
+                        "skill_deliveries": deliv},
+            "tools": [dict(t) for t in tools], "by_user": [dict(u) for u in by_user]}
+
+REPORT_HTML = """<!doctype html><html><head><meta charset="utf-8"><title>周报</title><style>""" + PAGE_CSS + """
+.row{display:flex;gap:14px;flex-wrap:wrap}
+.box{flex:1;min-width:150px;background:#f8fafc;border-radius:12px;padding:14px}
+.box .n{font-size:24px;font-weight:700;color:#1f3a5f}
+.box .t{font-size:12.5px;color:#6b7280;margin-top:4px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:8px 6px;border-bottom:1px solid #eef0f4}
+th{color:#6b7280;font-weight:600}
+""" + """</style></head><body>""" + NAV + """
+<div class="card"><h2>近 7 天团队周报</h2><div class="muted" id="range"></div>
+<div class="row" id="boxes" style="margin-top:14px"></div></div>
+<div class="card"><h2>工具使用排行</h2><table id="tools"><thead><tr><th>工具</th><th>次数</th><th>平均耗时</th><th>成功率</th></tr></thead><tbody></tbody></table></div>
+<div class="card"><h2>按成员</h2><table id="users"><thead><tr><th>成员</th><th>任务数</th></tr></thead><tbody></tbody></table></div>
+<script>
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
+async function load(){
+  const r=await fetch("/v1/report/weekly?days=7");const d=await r.json();
+  document.getElementById("range").textContent="统计范围：最近 "+d.days+" 天（截至 "+new Date().toLocaleString()+"）";
+  const s=d.summary;
+  document.getElementById("boxes").innerHTML=[
+    ["任务总数",s.tasks],["完成",s.done],["失败",s.failed],["Octop 任务",s.octop],
+    ["产物",s.artifacts],["新经验",s.experience_new],["已固化",s.experience_approved],["技能下发",s.skill_deliveries]
+  ].map(([t,n])=>`<div class="box"><div class="n">${n}</div><div class="t">${t}</div></div>`).join("");
+  document.querySelector("#tools tbody").innerHTML=d.tools.map(x=>`<tr><td>${esc(x.tool)}</td><td>${x.n}</td><td>${x.avg_ms||0} ms</td><td>${x.n?Math.round((x.ok_n||0)*100/x.n):0}%</td></tr>`).join("");
+  document.querySelector("#users tbody").innerHTML=d.by_user.map(x=>`<tr><td>${esc(x.who)}</td><td>${x.n}</td></tr>`).join("");
+}
+load();
+</script></body></html>"""
+
+@app.get("/report", response_class=HTMLResponse)
+async def report_page(request: Request):
+    if not check_token(request.cookies.get(COOKIE_NAME, "")):
+        return RedirectResponse("/login", status_code=303)
+    return REPORT_HTML
+
 @app.get("/experience", response_class=HTMLResponse)
 async def experience_page(request: Request):
     if not check_token(request.cookies.get(COOKIE_NAME, "")):
@@ -932,7 +1005,10 @@ th{color:#8592a8;font-weight:600;font-size:12px}
 </style></head><body>
 <div class="bar"><div class="logo">砺</div><div style="font-size:18px;font-weight:600">团队 AI 资产平台 · P0 看板</div>
 <div style="margin-left:auto;font-size:12.5px;opacity:.8" id="ts"></div>
-<a href="/terminals" style="color:#fff;opacity:.75;font-size:12.5px;margin-left:16px;text-decoration:none">终端管理</a>
+<a href="/experience" style="color:#fff;opacity:.75;font-size:12.5px;margin-left:16px;text-decoration:none">经验审核</a>
+<a href="/skills" style="color:#fff;opacity:.75;font-size:12.5px;margin-left:12px;text-decoration:none">技能库</a>
+<a href="/report" style="color:#fff;opacity:.75;font-size:12.5px;margin-left:12px;text-decoration:none">周报</a>
+<a href="/terminals" style="color:#fff;opacity:.75;font-size:12.5px;margin-left:12px;text-decoration:none">终端管理</a>
 <a href="/logout" style="color:#fff;opacity:.75;font-size:12.5px;margin-left:14px;text-decoration:none">退出</a></div>
 <div class="kpis">
 <div class="kpi"><div class="lbl">今日任务</div><div class="num" id="k1">-</div></div>
@@ -940,7 +1016,13 @@ th{color:#8592a8;font-weight:600;font-size:12px}
 <div class="kpi"><div class="lbl">累计 Token</div><div class="num" id="k3">-</div></div>
 <div class="kpi"><div class="lbl">产物数</div><div class="num" id="k4">-</div></div>
 </div>
+<div class="kpis" style="margin-top:14px">
+<div class="kpi" style="text-align:left"><div class="lbl">Octop 今日任务 / 累计</div><div class="num" id="o1">-</div></div>
+<div class="kpi" style="text-align:left"><div class="lbl">技能库 / 已下发次数</div><div class="num" id="o2">-</div></div>
+<div class="kpi" style="text-align:left"><div class="lbl">待审经验</div><div class="num" id="o3">-</div></div>
+</div>
 <div class="grid">
+<div class="card" style="width:360px"><h3>Octop 最近任务</h3><table id="octasks"><thead><tr><th>任务</th><th>状态</th><th>时间</th></tr></thead><tbody></tbody></table></div>
 <div class="card" style="width:360px"><h3>终端 / 成员</h3><table id="terms"><thead><tr><th>成员</th><th>终端</th><th>最后心跳</th></tr></thead><tbody></tbody></table></div>
 <div class="card" style="flex:1"><h3>最近任务与执行步骤</h3><table id="tasks"><thead><tr><th>任务</th><th>成员</th><th>状态</th><th>Token</th><th>开始</th></tr></thead><tbody></tbody></table>
 <div id="steps" style="margin-top:14px;font-size:12.5px;color:#5b6b85"></div></div>
@@ -951,6 +1033,14 @@ async function load(){
   k1.textContent=d.stats.tasks_today; k2.textContent=d.stats.online+' / '+d.stats.terminals;
   k3.textContent=d.stats.tokens.toLocaleString(); k4.textContent=d.stats.artifacts;
   ts.textContent='刷新于 '+new Date().toLocaleTimeString();
+  if(d.octop){ o1.textContent=(d.octop.today||0)+' / '+(d.octop.total||0); }
+  if(d.skills){ o2.textContent=(d.skills.count||0)+' 条 / '+(d.skills.deliveries||0)+' 次'; o3.textContent=(d.skills.pending_experience||0)+' 条'; }
+  if(d.octop && d.octop.recent){
+    const ot=document.querySelector('#octasks tbody'); ot.innerHTML='';
+    d.octop.recent.forEach(t=>{ const tr=document.createElement('tr');
+      tr.innerHTML='<td><a href="/tasks/'+t.id+'" style="color:#2f6bff;text-decoration:none">'+esc(t.title).slice(0,18)+'</a></td><td><span class="tag '+(t.status==='done'?'ok':'run')+'">'+esc(t.status)+'</span></td><td>'+(t.created_at?new Date(t.created_at).toLocaleTimeString():'-')+'</td>';
+      ot.appendChild(tr); });
+  }
   const tb=document.querySelector('#terms tbody'); tb.innerHTML='';
   d.terminals.forEach(t=>{ const tr=document.createElement('tr');
     tr.innerHTML='<td>'+esc(t.user_name)+'</td><td>'+esc(t.hostname)+'</td><td>'+(t.last_seen?new Date(t.last_seen).toLocaleTimeString():'-')+'</td>';
