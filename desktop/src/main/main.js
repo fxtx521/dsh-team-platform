@@ -213,6 +213,85 @@ ipcMain.handle('cloud:skillStats', async () => {
   const r = await api('GET', '/v1/skills/stats');
   return r;
 });
+// ── 本地工具执行器（长轮询：等云端 AI 派活，在本地真干）─────
+let pollBusy = false;
+let pollStopped = false;
+
+async function pollOnce() {
+  const cfg = readCfg();
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 25000);
+  let call = null;
+  try {
+    const res = await fetch(cfg.serverUrl.replace(/\/$/, '') + '/v1/local/poll?timeout=15', {
+      method: 'POST', headers: { 'X-API-Key': cfg.apiKey, 'Content-Type': 'application/json' }, signal: ctrl.signal,
+    });
+    const d = await res.json();
+    call = d.call;
+  } catch (e) { /* 网络抖动忽略 */ } finally { clearTimeout(timer); }
+  if (!call) return;
+  const { id, tool, args } = call;
+  let ok = true, output = '';
+  try {
+    if (tool === 'local_list_dir') {
+      const dir = path.resolve(String(args.dir || ''));
+      if (!isInside(cfgRoots(), dir)) throw new Error('目录不在白名单');
+      output = fs.readdirSync(dir).slice(0, 200).map((n) => {
+        const full = path.join(dir, n);
+        try { const s = fs.statSync(full); return (s.isDirectory() ? '[DIR] ' : '') + n + (s.isDirectory() ? '' : '  ' + s.size + 'B'); }
+        catch { return n; }
+      }).join('\n');
+    } else if (tool === 'local_read_file') {
+      const f = path.resolve(String(args.file || ''));
+      if (!isInside(cfgRoots(), f)) throw new Error('文件不在白名单');
+      output = fs.readFileSync(f, 'utf8').slice(0, 200000);
+    } else if (tool === 'local_write_file') {
+      const f = path.resolve(String(args.file || ''));
+      if (!isInside(cfgRoots(), f)) throw new Error('文件不在白名单');
+      fs.mkdirSync(path.dirname(f), { recursive: true });
+      fs.writeFileSync(f, String(args.content || ''), 'utf8');
+      output = '已写入 ' + f;
+    } else if (tool === 'local_run_cmd') {
+      if (!cfg.allowCommand) throw new Error('命令执行未开启（客户端设置里打开）');
+      const bin = String(args.cmd || '').trim().split(/\s+/)[0];
+      if (!(cfg.cmdWhitelist || []).includes(bin)) throw new Error('不在命令白名单: ' + bin);
+      const wd = args.cwd && isInside(cfgRoots(), path.resolve(args.cwd)) ? path.resolve(args.cwd) : cfg.projectRoot;
+      output = await new Promise((resolve, reject) => {
+        execFile('/bin/sh', ['-c', String(args.cmd)], { cwd: wd, timeout: 60000, maxBuffer: 4 * 1024 * 1024 },
+          (err, stdout, stderr) => { if (err) reject(new Error((stderr || err.message).slice(0, 2000))); else resolve((stdout || '').slice(0, 20000)); });
+      });
+    } else throw new Error('未知工具 ' + tool);
+  } catch (e) { ok = false; output = ''; log('本地工具失败: ' + tool + ' · ' + e.message); }
+  if (ok) log('本地工具执行: ' + tool);
+  try {
+    await fetch(cfg.serverUrl.replace(/\/$/, '') + '/v1/local/result', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Key': cfg.apiKey },
+      body: JSON.stringify({ id, ok, output, error: ok ? '' : '执行失败' }),
+    });
+  } catch (e) { log('回传结果失败: ' + e.message); }
+  broadcast();
+}
+
+function startPoller() {
+  pollStopped = false;
+  const loop = async () => {
+    if (pollStopped) return;
+    if (!pollBusy) {
+      pollBusy = true;
+      try { await pollOnce(); } catch (e) { log('poll err: ' + e.message); }
+      pollBusy = false;
+    }
+    setTimeout(loop, 500);
+  };
+  loop();
+}
+
+ipcMain.handle('cloud:chat', async (_e, { message }) => {
+  const r = await api('POST', '/v1/chat', { message });
+  if (r.ok) log('对话完成 · ' + (r.data.elapsed_ms || 0) + 'ms');
+  return r;
+});
+
 ipcMain.handle('cloud:runTask', async (_e, payload) => {
   const r = await api('POST', '/v1/octop/run', payload);
   if (r.ok) log('任务已提交 → ' + (r.data.task_id || '') + ' · ' + (r.data.elapsed_ms || 0) + 'ms');
@@ -268,6 +347,7 @@ app.whenReady().then(() => {
   createTray();
   setTimeout(heartbeat, 1500);
   setInterval(heartbeat, 60 * 1000);
+  setTimeout(startPoller, 2500);
   app.on('activate', () => { if (!win) createWindow(); else win.show(); });
 });
 app.on('before-quit', () => { app.isQuitting = true; });

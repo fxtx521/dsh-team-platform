@@ -35,6 +35,7 @@ const api = window.wb || {
   openInFinder: async () => true,
   reveal: async () => true,
   runCmd: async () => ({ ok: true, output: '（预览模式，未执行真实命令）' }),
+  chat: async (m) => ({ ok: true, data: { reply: '（预览模式）收到：' + m, elapsed_ms: 3200 } }),
   listTextFiles: async () => ({ ok: true, items: [{ name: '招标文件摘要.txt', path: '/tmp/a.txt' }, { name: '客户资料.csv', path: '/tmp/b.csv' }] }),
   runTask: async () => ({ ok: true, data: { task_id: 'mock-task', elapsed_ms: 7600, reply: '（预览模式）这是一份按 SOP 生成的示例结果。' } }),
   saveOutput: async () => ({ ok: true, path: '/tmp/out.md' }),
@@ -69,7 +70,8 @@ function go(view) {
   $$('.view').forEach((v) => v.classList.remove('active'));
   const el = $('#view-' + view); if (el) el.classList.add('active');
   $$('.nav-item').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
-  $('#crumb').textContent = { home: '概览', projects: '我的项目', tasks: '任务', skills: '技能库', console: '终端', settings: '设置' }[view] || '';
+  $('#crumb').textContent = { home: '概览', chat: '对话', projects: '我的项目', tasks: '任务', skills: '技能库', console: '终端', settings: '设置' }[view] || '';
+  if (view === 'chat') bindChat();
   if (view === 'tasks') loadTasks();
   if (view === 'skills') loadSkills();
   if (view === 'settings') fillSettings();
@@ -233,8 +235,44 @@ function bindModal() {
     toast(r && r.ok ? '已上传到看板' : '上传失败');
   };
 }
+
+// ── 对话 ────────────────────────────────────────────────
+let chatMsgs = [];
+function renderChat() {
+  const box = $('#chatBody');
+  box.innerHTML = chatMsgs.map((m) => `<div class="msg ${m.role}">${esc(m.text)}${m.meta ? `<span class="meta">${esc(m.meta)}</span>` : ''}</div>`).join('');
+  if (!chatMsgs.length) box.innerHTML = '<div class="msg ai">你好，我是团队 AI 助理。<br>直接说你要做什么——比如「把项目里的报价单整理成表」，我会在你本地文件夹里读写文件。</div>';
+  box.scrollTop = box.scrollHeight;
+}
+async function sendChat() {
+  const inp = $('#chatInput');
+  const text = (inp.value || '').trim();
+  if (!text) return;
+  inp.value = '';
+  chatMsgs.push({ role: 'user', text });
+  renderChat();
+  const box = $('#chatBody');
+  const tip = document.createElement('div');
+  tip.className = 'typing'; tip.textContent = '助理思考中…'; box.appendChild(tip); box.scrollTop = box.scrollHeight;
+  const r = await api.chat(text);
+  tip.remove();
+  if (r && r.ok) chatMsgs.push({ role: 'ai', text: r.data.reply || '(空)', meta: (r.data.elapsed_ms || 0) + 'ms' });
+  else chatMsgs.push({ role: 'ai', text: '出错了：' + JSON.stringify((r && r.data) || {}).slice(0, 200) });
+  renderChat();
+}
+function bindChat() {
+  const sel = $('#chatProject');
+  const cfg = SNAP?.cfg || {};
+  sel.innerHTML = (cfg.projects || []).map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('') || '<option value="">（先添加项目）</option>';
+  $('#chatSend').onclick = sendChat;
+  $('#chatInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
+  });
+  renderChat();
+}
 function bind() {
   bindModal();
+  bindChat();
   $$('.nav-item').forEach((b) => b.onclick = () => go(b.dataset.view));
   $$('[data-view]').forEach((b) => { if (b.classList.contains('link') || b.tagName === 'BUTTON' && !b.classList.contains('nav-item')) b.onclick = () => go(b.dataset.view); });
   $('#btnRefresh').onclick = async () => { await api.heartbeat(); await refresh(); toast('已刷新'); };
@@ -273,7 +311,7 @@ function bind() {
   bind();
   await refresh();
   const h = (location.hash || '').replace('#', '');
-  go(h || 'home');
+  go(h || 'chat');
   if (location.search.includes('modal=1')) openTaskModal(location.search.includes('tpl=ledger') ? 'ledger' : (location.search.includes('tpl=bid') ? 'bid' : 'verify'));
   window.addEventListener('hashchange', () => go((location.hash || '').replace('#', '') || 'home'));
 })();

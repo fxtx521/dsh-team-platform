@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Optional, List
 from urllib.parse import parse_qs
 from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 DATA = os.environ.get("DSH_PLATFORM_DATA", "/opt/dsh-platform/data")
@@ -569,30 +569,75 @@ async def _dispatch_local(tool: str, args: dict, timeout: float = 60.0):
 @app.post("/mcp")
 async def mcp_endpoint(request: Request):
     """MCP（streamable HTTP）网关：把 Octop 的工具调用转发到员工本地工作台。"""
-    body = await request.json()
+    try:
+        body = await request.json()
+    except Exception:
+        return Response("bad request", status_code=400)
     method = body.get("method") or ""
     rid = body.get("id")
-    def resp(result):
+    accept = (request.headers.get("accept") or "").lower()
+    sid = request.headers.get("mcp-session-id") or ""
+
+    def send(payload: dict, status: int = 200):
+        headers = {}
+        if sid:
+            headers["Mcp-Session-Id"] = sid
+        if "text/event-stream" in accept:
+            data = "event: message\ndata: " + json.dumps(payload, ensure_ascii=False) + "\n\n"
+            return Response(data, status_code=status, media_type="text/event-stream", headers=headers)
+        return JSONResponse(payload, status_code=status, headers=headers)
+
+    def ok(result):
         return {"jsonrpc": "2.0", "id": rid, "result": result}
+
     if method == "initialize":
-        return resp({"protocolVersion": "2024-11-05", "capabilities": {"tools": {}},
-                     "serverInfo": {"name": "lishi-local-workbench", "version": "0.1.0"}})
-    if method in ("notifications/initialized", "initialized"):
-        return JSONResponse({}, status_code=202)
+        sid = uuid.uuid4().hex
+        return send(ok({"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": False}},
+                        "serverInfo": {"name": "lishi-local-workbench", "version": "0.1.0"}}))
+    if method in ("notifications/initialized", "initialized", "notifications/cancelled"):
+        return Response("", status_code=202, headers=({"Mcp-Session-Id": sid} if sid else {}))
+    if method == "ping":
+        return send(ok({}))
     if method == "tools/list":
-        return resp({"tools": LOCAL_TOOLS})
+        return send(ok({"tools": LOCAL_TOOLS}))
     if method == "tools/call":
         params = body.get("params") or {}
         name = params.get("name") or ""
         args = params.get("arguments") or {}
         if name not in [t["name"] for t in LOCAL_TOOLS]:
-            return {"jsonrpc": "2.0", "id": rid, "error": {"code": -32602, "message": "unknown tool: " + name}}
+            return send({"jsonrpc": "2.0", "id": rid, "error": {"code": -32602, "message": "unknown tool: " + name}})
         r = await _dispatch_local(name, args)
         text = r.get("output") if r.get("ok") else ("错误: " + str(r.get("error")))
-        return resp({"content": [{"type": "text", "text": str(text)[:20000]}], "isError": not r.get("ok")})
-    if method == "ping":
-        return resp({})
-    return {"jsonrpc": "2.0", "id": rid, "error": {"code": -32601, "message": "method not found"}}
+        return send(ok({"content": [{"type": "text", "text": str(text)[:20000]}], "isError": not r.get("ok")}))
+    return send({"jsonrpc": "2.0", "id": rid, "error": {"code": -32601, "message": "method not found"}})
+
+@app.get("/mcp")
+async def mcp_get(request: Request):
+    """streamable HTTP 的 GET 流：允许建立但不推送（保持连接可用）。"""
+    sid = request.headers.get("mcp-session-id") or ""
+    async def stream():
+        yield ": keep-alive\n\n"
+    return StreamingResponse(stream(), media_type="text/event-stream",
+                             headers=({"Mcp-Session-Id": sid} if sid else {}))
+
+@app.delete("/mcp")
+async def mcp_delete(request: Request):
+    return Response("", status_code=204)
+@app.post("/v1/chat")
+async def chat_with_assistant(request: Request, x_api_key: Optional[str] = Header(None)):
+    """客户端聊天：员工终端 Key 直接和云端助理对话（不建任务，轻量）。"""
+    terminal = None
+    try:
+        require_admin(request)
+    except HTTPException:
+        terminal = auth(x_api_key)
+    b = await request.json()
+    msg = (b.get("message") or "").strip()
+    if not msg:
+        raise HTTPException(400, "message required")
+    res = octop_chat(msg, timeout=240)
+    return {"ok": res["ok"], "reply": res["reply"], "elapsed_ms": res["elapsed_ms"], "error": res.get("error", ""),
+            "who": (terminal["user_name"] if terminal else "admin")}
 
 @app.post("/v1/octop/run")
 async def octop_run(request: Request, x_api_key: Optional[str] = Header(None), x_admin_cookie: Optional[str] = Header(None)):
