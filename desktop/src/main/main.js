@@ -213,6 +213,44 @@ ipcMain.handle('cloud:skillStats', async () => {
   const r = await api('GET', '/v1/skills/stats');
   return r;
 });
+ipcMain.handle('cloud:runTask', async (_e, payload) => {
+  const r = await api('POST', '/v1/octop/run', payload);
+  if (r.ok) log('任务已提交 → ' + (r.data.task_id || '') + ' · ' + (r.data.elapsed_ms || 0) + 'ms');
+  else log('任务提交失败: ' + JSON.stringify(r.data).slice(0, 200));
+  return r;
+});
+ipcMain.handle('cloud:uploadArtifact', async (_e, { taskId, name, content }) => {
+  const r = await api('POST', '/v1/tasks/' + encodeURIComponent(taskId) + '/artifacts/upload-b64',
+    { name, visibility: 'team', content_b64: Buffer.from(String(content || ''), 'utf8').toString('base64') });
+  if (r.ok) log('产物已上传: ' + name);
+  return r;
+});
+ipcMain.handle('project:saveOutput', (_e, { dir, name, content }) => {
+  const base = path.resolve(dir);
+  if (!isInside(cfgRoots(), base)) return { ok: false, error: '目录不在允许范围' };
+  try {
+    const outDir = path.join(base, '产出');
+    fs.mkdirSync(outDir, { recursive: true });
+    const safe = String(name || 'output.md').replace(/[\\/:*?"<>|]/g, '_');
+    const f = path.join(outDir, safe);
+    fs.writeFileSync(f, content, 'utf8');
+    log('已保存产出: ' + f);
+    return { ok: true, path: f };
+  } catch (e) { return { ok: false, error: e.message }; }
+});
+ipcMain.handle('project:listTextFiles', (_e, { dir, rel }) => {
+  const base = path.resolve(dir);
+  const target = path.resolve(base, rel || '.');
+  if (!isInside(cfgRoots(), target)) return { ok: false, items: [] };
+  const exts = ['.txt', '.md', '.csv', '.json', '.log', '.yaml', '.yml', '.html', '.py', '.js'];
+  try {
+    const items = fs.readdirSync(target, { withFileTypes: true })
+      .filter((d) => d.isFile() && exts.includes(path.extname(d.name).toLowerCase()))
+      .slice(0, 50)
+      .map((d) => ({ name: d.name, path: path.join(target, d.name) }));
+    return { ok: true, items };
+  } catch (e) { return { ok: false, items: [], error: e.message }; }
+});
 ipcMain.handle('window:minimize', () => win && win.minimize());
 ipcMain.handle('window:close', () => win && win.hide());
 

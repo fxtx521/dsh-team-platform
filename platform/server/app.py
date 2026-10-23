@@ -508,15 +508,30 @@ def run_search(q: str, n: int = 6, timeout: int = 60) -> str:
         return ""
 
 @app.post("/v1/octop/run")
-async def octop_run(request: Request, x_api_key: Optional[str] = None, x_admin_cookie: Optional[str] = Header(None)):
-    """管理员在平台上派一个任务，交给 Octop 执行，并把结果记成 task + step。"""
-    require_admin(request)
+async def octop_run(request: Request, x_api_key: Optional[str] = Header(None), x_admin_cookie: Optional[str] = Header(None)):
+    """派任务给 Octop 执行：管理员（网页）或员工终端（X-API-Key）都可以调用。"""
+    terminal = None
+    try:
+        require_admin(request)
+    except HTTPException:
+        terminal = auth(x_api_key)
     body = await request.json()
     title = (body.get("title") or "").strip()
     prompt = (body.get("prompt") or "").strip()
     if body.get("template_id"):
         tname, prompt = render_template(str(body["template_id"]), body.get("params") or {})
         title = title or tname
+    files = body.get("files") or []
+    file_block = ""
+    for f in files[:10]:
+        fname = os.path.basename(str(f.get("name") or "file"))
+        content = str(f.get("content") or "")[:8000]
+        if not content:
+            continue
+        file_block += f"\n--- 文件：{fname} ---\n{content}\n"
+    if file_block:
+        prompt = ("【本地项目文件内容（由员工客户端读取，任务结束后不会留在服务器）】\n"
+                  + file_block + "\n【任务要求】\n" + prompt)
     title = title or "Octop 任务"
     if not prompt:
         raise HTTPException(400, "prompt required")
@@ -524,7 +539,7 @@ async def octop_run(request: Request, x_api_key: Optional[str] = None, x_admin_c
     c = conn()
     c.execute("""INSERT INTO tasks(id,terminal_id,title,type,status,started_at,model,summary,created_at)
                  VALUES(?,?,?,?,?,?,?,?,?)""",
-              (tid, "octop", title, "octop", "running", now(), "qwen3.5:9b", "", now()))
+              (tid, (terminal["id"] if terminal else "octop"), title, "octop", "running", now(), "qwen3.5:9b", "", now()))
     c.commit(); c.close()
     # 先做确定性检索（平台做工具，模型只做推理与写作）
     search_query = ""
@@ -570,6 +585,13 @@ async def octop_run(request: Request, x_api_key: Optional[str] = None, x_admin_c
                       (f"{tid}-k", tid, seq, "skill.inject", sk["id"][:16], int((time.time()-t0)*1000), 1, "", now()))
             c.commit(); c.close()
             seq += 1
+    if file_block:
+        c = conn()
+        c.execute("""INSERT INTO task_steps(id,task_id,seq,tool,args_digest,duration_ms,ok,error_code,created_at)
+                     VALUES(?,?,?,?,?,?,?,?,?)""",
+                  (f"{tid}-f", tid, seq, "file.attach", hashlib.sha256(file_block.encode()).hexdigest()[:16], 0, 1, "", now()))
+        c.commit(); c.close()
+        seq += 1
     res = octop_chat(prompt)
     c = conn()
     c.execute("""INSERT INTO task_steps(id,task_id,seq,tool,args_digest,duration_ms,ok,error_code,created_at)

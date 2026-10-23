@@ -35,6 +35,10 @@ const api = window.wb || {
   openInFinder: async () => true,
   reveal: async () => true,
   runCmd: async () => ({ ok: true, output: '（预览模式，未执行真实命令）' }),
+  listTextFiles: async () => ({ ok: true, items: [{ name: '招标文件摘要.txt', path: '/tmp/a.txt' }, { name: '客户资料.csv', path: '/tmp/b.csv' }] }),
+  runTask: async () => ({ ok: true, data: { task_id: 'mock-task', elapsed_ms: 7600, reply: '（预览模式）这是一份按 SOP 生成的示例结果。' } }),
+  saveOutput: async () => ({ ok: true, path: '/tmp/out.md' }),
+  uploadArtifact: async () => ({ ok: true }),
   heartbeat: async () => MOCK,
   tasks: async () => ({ ok: true, data: { items: [
     { id: 't1', title: '客户资料核查 · 山东鼎晟机械', status: 'done', created_at: new Date().toISOString() },
@@ -150,12 +154,92 @@ function fillSettings() {
   $('#cfgAllowCmd').checked = !!c.allowCommand;
   $('#cfgWhitelist').value = (c.cmdWhitelist || []).join(',');
 }
+
+// ── 执行任务弹窗 ────────────────────────────────────────
+const TEMPLATES = {
+  verify: { name: '客户资料核查', params: [{ key: '公司名称', ph: '例如：山东鼎晟机械工程有限公司' }] },
+  ledger: { name: '台账整理', params: [{ key: '数据说明', ph: '例如：本月客户台账 87 行，含公司名/金额/日期' }] },
+  bid: { name: '标书初稿', params: [{ key: '项目名称', ph: '例如：某园区户外餐车采购' }, { key: '招标要求', ph: '例如：需 CE 认证，30 天交付 6 台' }] },
+};
+let mTpl = 'verify', mResult = null, mTaskId = '';
+function openTaskModal(tpl) {
+  mTpl = tpl || 'verify'; mResult = null; mTaskId = '';
+  const t = TEMPLATES[mTpl];
+  $('#mTitle').textContent = '执行任务 · ' + t.name;
+  const cfg = SNAP?.cfg || {};
+  const sel = $('#mProject');
+  sel.innerHTML = (cfg.projects || []).map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('') || '<option value="">（请先添加项目）</option>';
+  $('#mParams').innerHTML = t.params.map((p) => `<label class="field"><span>${esc(p.key)}</span><input data-param="${esc(p.key)}" placeholder="${esc(p.ph || '')}" /></label>`).join('');
+  $('#mResult').style.display = 'none'; $('#mResult').textContent = '';
+  $('#mSave').style.display = 'none'; $('#mUpload').style.display = 'none';
+  $('#mRun').textContent = '开始执行'; $('#mRun').disabled = false;
+  $('#taskModal').classList.add('show');
+  loadAttachFiles();
+}
+async function loadAttachFiles() {
+  const box = $('#mFiles'); box.innerHTML = '<span class="sub">加载中…</span>';
+  const pid = $('#mProject').value;
+  const p = (SNAP?.cfg?.projects || []).find((x) => x.id === pid);
+  if (!p) { box.innerHTML = '<span class="sub">先添加项目</span>'; return; }
+  const r = await api.listTextFiles ? await api.listTextFiles({ dir: p.dir }) : { ok: false, items: [] };
+  const items = (r && r.items) || [];
+  box.innerHTML = items.length ? items.map((f) => `<label><input type="checkbox" value="${esc(f.path)}" />${esc(f.name)}</label>`).join('') : '<span class="sub">这个项目里没有可附带的文本文件</span>';
+}
+async function runTask() {
+  const cfg = SNAP?.cfg || {};
+  const pid = $('#mProject').value;
+  const p = (cfg.projects || []).find((x) => x.id === pid);
+  if (!p) { toast('先添加一个项目'); return; }
+  const params = {};
+  $$('#mParams [data-param]').forEach((el) => { params[el.dataset.param] = el.value.trim(); });
+  const missing = TEMPLATES[mTpl].params.filter((x) => !params[x.key]);
+  if (missing.length) { toast('请填写：' + missing.map((x) => x.key).join('、')); return; }
+  const picked = $$('#mFiles input:checked').map((el) => el.value);
+  const files = [];
+  for (const f of picked.slice(0, 10)) {
+    const r = await api.readFile({ file: f, max: 20000 });
+    if (r.ok) files.push({ name: f.split(/[\\/]/).pop(), content: r.content });
+  }
+  const btn = $('#mRun'); btn.disabled = true; btn.textContent = '执行中…';
+  const res = await api.runTask({ template_id: mTpl, title: TEMPLATES[mTpl].name + ' · ' + p.name, params, files });
+  btn.disabled = false; btn.textContent = '重新执行';
+  if (res && res.ok) {
+    mResult = res.data.reply || '(空回复)'; mTaskId = res.data.task_id || '';
+    $('#mResult').style.display = 'block';
+    $('#mResult').textContent = mResult;
+    $('#mSave').style.display = 'inline-block'; $('#mUpload').style.display = 'inline-block';
+    toast('完成 · ' + (res.data.elapsed_ms || 0) + 'ms');
+  } else {
+    $('#mResult').style.display = 'block';
+    $('#mResult').textContent = '执行失败：' + JSON.stringify(res && res.data || {}).slice(0, 300);
+    toast('执行失败');
+  }
+}
+function bindModal() {
+  $('#mClose').onclick = () => $('#taskModal').classList.remove('show');
+  $('#mProject').onchange = loadAttachFiles;
+  $('#mRun').onclick = runTask;
+  $('#mSave').onclick = async () => {
+    const p = (SNAP?.cfg?.projects || []).find((x) => x.id === $('#mProject').value);
+    if (!p || !mResult) return;
+    const name = TEMPLATES[mTpl].name + '-' + new Date().toISOString().slice(0, 10) + '.md';
+    const r = await api.saveOutput({ dir: p.dir, name, content: '# ' + TEMPLATES[mTpl].name + '\n\n' + mResult });
+    toast(r.ok ? '已保存到 产出/' + name : '保存失败：' + r.error);
+  };
+  $('#mUpload').onclick = async () => {
+    if (!mTaskId) { toast('没有任务 ID'); return; }
+    const name = TEMPLATES[mTpl].name + '.md';
+    const r = await api.uploadArtifact({ taskId: mTaskId, name, content: mResult || '' });
+    toast(r && r.ok ? '已上传到看板' : '上传失败');
+  };
+}
 function bind() {
+  bindModal();
   $$('.nav-item').forEach((b) => b.onclick = () => go(b.dataset.view));
   $$('[data-view]').forEach((b) => { if (b.classList.contains('link') || b.tagName === 'BUTTON' && !b.classList.contains('nav-item')) b.onclick = () => go(b.dataset.view); });
   $('#btnRefresh').onclick = async () => { await api.heartbeat(); await refresh(); toast('已刷新'); };
-  $('#btnQuick').onclick = () => go('projects');
-  $$('[data-quick]').forEach((b) => b.onclick = () => { go('projects'); toast('选一个项目，然后开始「' + (b.textContent || '').trim() + '」'); });
+  $('#btnQuick').onclick = () => openTaskModal('verify');
+  $$('[data-quick]').forEach((b) => b.onclick = () => openTaskModal(b.dataset.quick || 'verify'));
   $('#btnAddProject').onclick = async () => {
     const dir = await api.pickFolder(); if (!dir) return;
     const name = prompt('给这个项目起个名字：', dir.split(/[\\/]/).pop()) || dir;
@@ -190,5 +274,6 @@ function bind() {
   await refresh();
   const h = (location.hash || '').replace('#', '');
   go(h || 'home');
+  if (location.search.includes('modal=1')) openTaskModal(location.search.includes('tpl=ledger') ? 'ledger' : (location.search.includes('tpl=bid') ? 'bid' : 'verify'));
   window.addEventListener('hashchange', () => go((location.hash || '').replace('#', '') || 'home'));
 })();

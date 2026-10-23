@@ -136,6 +136,22 @@
     </section>
   </main>
 </div>
+<div class="modal-mask" id="taskModal">
+  <div class="modal">
+    <div class="modal-h"><h3 id="mTitle">执行任务</h3><button class="modal-x" id="mClose">✕</button></div>
+    <div class="modal-b">
+      <label class="field"><span>项目</span><select id="mProject"></select></label>
+      <div id="mParams"></div>
+      <div class="field"><span>附带本地文件（可选，最多 10 个，只随本次任务发送）</span><div id="mFiles" class="filepick"></div></div>
+      <div id="mResult" class="result" style="display:none"></div>
+    </div>
+    <div class="modal-f">
+      <button class="btn ghost" id="mSave" style="display:none">保存到项目</button>
+      <button class="btn ghost" id="mUpload" style="display:none">上传到看板</button>
+      <button class="btn primary" id="mRun">开始执行</button>
+    </div>
+  </div>
+</div>
 <div id="toast" class="toast"></div>
 <script src="app.js"></script>
 </body>
