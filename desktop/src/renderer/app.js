@@ -140,6 +140,7 @@ async function loadSkillPicker() {
   });
 }
 function renderSkillCount() {
+  renderCtxChips();
   const el = $('#skillCount');
   if (el) el.textContent = String(pickedSkills.length);
 }
@@ -371,10 +372,13 @@ async function loadArtifacts() {
   const r = await api.listTextFiles({ dir: proj.dir + "/产出" });
   const items = (r && r.items) || [];
   box.innerHTML = items.slice(0, 50).map(function (f) {
-    return '<div class="item" data-art="' + esc(f.path) + '"><div class="t"><b>' + esc(f.name) + '</b></div><span class="badge ok">预览</span></div>';
+    return '<div class="item" data-art="' + esc(f.path) + '"><div class="t"><b>' + esc(f.name) + '</b></div><span class="badge ok" data-art-reveal="' + esc(f.path) + '">在访达显示</span></div>';
   }).join("") || '<div class="sub">还没有产物</div>';
   $$("[data-art]").forEach(function (el) {
     el.onclick = function () { previewFile(el.dataset.art, el.textContent.trim()); };
+  });
+  $$("[data-art-reveal]").forEach(function (el) {
+    el.onclick = function (e) { e.stopPropagation(); api.reveal(el.dataset.artReveal); };
   });
   const rb = $("#btnArtifactRefresh");
   if (rb) rb.onclick = loadArtifacts;
@@ -494,6 +498,7 @@ function loadCapabilitiesWith(c) {
       const ids = String(v || '').split(/[,，\s]+/).filter(Boolean).map((x) => items[parseInt(x, 10) - 1]).filter(Boolean).map((k) => k.id);
       pickedKbs = ids;
       const el = $('#kbCount'); if (el) el.textContent = String(ids.length);
+      renderCtxChips();
       toast(ids.length ? ('已引用 ' + ids.length + ' 个知识库') : '未选择');
     });
   };
@@ -576,6 +581,34 @@ let curKbId = "";
 
 // ── 右侧上下文面板 ─────────────────────────
 let ctxTab = "files";
+
+function renderCtxChips() {
+  const box = $("#chatCtxChips");
+  if (!box) return;
+  const chips = [];
+  pickedSkills.forEach(function (s) {
+    chips.push({ kind: "skill", id: s, label: "技能：" + s });
+  });
+  pickedKbs.forEach(function (k) {
+    chips.push({ kind: "kb", id: k, label: "知识库：" + k });
+  });
+  box.innerHTML = chips.map(function (c) {
+    return '<span class="ctxchip">' + esc(c.label) + '<span data-chip-rm="' + esc(c.kind + ":" + c.id) + '">✕</span></span>';
+  }).join("");
+  $$("[data-chip-rm]").forEach(function (el) {
+    el.onclick = function () {
+      const v = el.dataset.chipRm;
+      const idx = v.indexOf(":");
+      const kind = v.slice(0, idx), id = v.slice(idx + 1);
+      if (kind === "skill") pickedSkills = pickedSkills.filter(function (x) { return x !== id; });
+      else pickedKbs = pickedKbs.filter(function (x) { return x !== id; });
+      renderCtxChips();
+      renderSkillCount();
+      const kc = $("#kbCount"); if (kc) kc.textContent = String(pickedKbs.length);
+    };
+  });
+}
+
 async function renderContext() {
   const box = $("#ctxBody");
   if (!box) return;
@@ -1115,6 +1148,11 @@ async function loadMe() {
   if (SNAP && SNAP.cfg && SNAP.cfg.onboarded !== true) {
     const om = $("#onboardModal");
     if (om && SNAP.cfg.octopToken) om.classList.add("show");
+  }
+  if (location.protocol === 'file:') {
+    pickedSkills = ['apple-notes'];
+    pickedKbs = ['kb-demo'];
+    renderCtxChips();
   }
   const h = (location.hash || '').replace('#', '');
   go(h || 'chat');

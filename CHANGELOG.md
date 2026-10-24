@@ -5,6 +5,24 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ---
 
+## [0.35.0] - 2026-10-24
+
+### 中文
+
+- **对话上下文标签**：输入框上方显示本轮启用的「技能：xxx」「知识库：xxx」标签，可点 ✕ 移除
+- **产物操作**：产物列表可直接「在访达显示」；点条目仍可预览
+- 标签随技能/知识库选择实时更新，切换专家时清空避免串用
+- 用无头渲染截图核对了标签与按钮位置（不遮挡输入框）
+
+### English
+
+- **Context chips**: chips above the composer show the skills and knowledge bases used by the current turn, removable via the x
+- **Artifact actions**: artifacts can be revealed in Finder directly; clicking still previews the file
+- Chips update as you pick skills/bases and reset when switching experts
+- Verified with headless screenshots that chips do not overlap the composer
+
+---
+
 ## [0.34.0] - 2026-10-24
 
 ### 中文
