@@ -316,6 +316,7 @@ function fillSettings() {
   const mo = $('#mcpOn'); if (mo) mo.checked = m.enabled !== false;
   const c = SNAP?.cfg || {};
   const co = $('#cfgOctop'); if (co) co.value = c.octopUrl || 'http://192.168.1.239:18090';
+  const ow = $('#octopWho'); if (ow) ow.textContent = c.octopToken ? ('已登录：' + (c.employeeName || '未知') + (c.octopAgent ? '（助理 ' + c.octopAgent + '）' : '')) : '未登录';
   $('#cfgServer').value = c.serverUrl || '';
   $('#cfgKey').value = c.apiKey || '';
   $('#cfgName').value = c.employeeName || '';
@@ -594,6 +595,8 @@ function bind() {
     out.scrollTop = out.scrollHeight;
   };
   $('#consoleCmd').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#btnRunCmd').click(); });
+  const lo = $('#btnLogoutOctop');
+  if (lo) lo.onclick = async () => { await api.octopLogout(); await refresh(); $('#loginModal').classList.add('show'); toast('已退出登录'); };
   const bo = $('#btnSaveOctop');
   if (bo) bo.onclick = async () => { await api.saveConfig({ octopUrl: $('#cfgOctop').value.trim() }); await refresh(); toast('Octop 地址已保存'); };
   $('#btnSaveConn').onclick = async () => {

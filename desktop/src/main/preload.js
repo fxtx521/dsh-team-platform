@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('wb', {
   chat: (m, sessionId, files, projectId, expertId) => ipcRenderer.invoke('cloud:chat', { message: m, sessionId, files, projectId, expertId }),
   experts: () => ipcRenderer.invoke('cloud:experts'),
   octopLogin: (u, p) => ipcRenderer.invoke('octop:login', { username: u, password: p }),
+  octopLogout: () => ipcRenderer.invoke('octop:logout'),
   octopExperts: () => ipcRenderer.invoke('octop:experts'),
   octopChat: (p) => ipcRenderer.invoke('octop:chat', p),
   mcpToggle: (on) => ipcRenderer.invoke('mcp:toggle', on),

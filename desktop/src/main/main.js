@@ -397,6 +397,14 @@ ipcMain.handle('auth:login', async (_e, { username, password }) => {
   return { ok: true, user: r.data.user, permissions: r.data.permissions };
 });
 
+ipcMain.handle('octop:logout', async () => {
+  const cfg = readCfg();
+  writeCfg({ ...cfg, octopToken: '', octopAgent: '', devAutoLogin: false });
+  log('已退出 Octop 登录');
+  broadcast();
+  return { ok: true };
+});
+
 ipcMain.handle('auth:logout', async () => {
   const cfg = readCfg();
   writeCfg({ ...cfg, token: '' });
@@ -682,11 +690,11 @@ function isInside(roots, target) {
 app.whenReady().then(() => {
   createWindow();
   createTray();
-  // 免手动登录：读取工作区的 .octop-token（如果存在）自动写入配置
+  // 开发便利：仅当配置里显式开启 devAutoLogin 才读取工作区 token（默认关闭，正常流程必须登录）
   try {
     const cfg0 = readCfg();
     const tf = path.join('/Users/liubang/Documents/deepseek-harness/default-workspace', '.octop-token');
-    if (!cfg0.octopToken && fs.existsSync(tf)) {
+    if (cfg0.devAutoLogin === true && !cfg0.octopToken && fs.existsSync(tf)) {
       const tok = fs.readFileSync(tf, 'utf8').trim();
       if (tok) {
         writeCfg({ ...cfg0, octopToken: tok, octopUrl: cfg0.octopUrl || 'http://8.140.227.88:18090' });

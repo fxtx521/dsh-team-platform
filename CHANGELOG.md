@@ -5,6 +5,22 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ---
 
+## [0.14.1] - 2026-10-24
+
+### 中文
+
+- **登录流程修正**：恢复「登录框 + 记住登录 + 退出登录」的正常流程；自动从工作区读取 token 的行为改为**仅开发开关**（默认关闭）。
+- 设置页显示当前登录账号与助理，并提供「退出登录」。
+- 安全审计：仓库中**未包含**任何 token / 密钥；`.octop-token` 已加入忽略列表。
+
+### English
+
+- **Login flow fixed**: the normal flow (login dialog + remember + logout) is restored; auto-reading a workspace token is now a **dev-only switch** (off by default).
+- Settings shows the signed-in account/agent and a Logout button.
+- Security audit: the repo contains **no** tokens or secrets; `.octop-token` is ignored.
+
+---
+
 ## [0.14.0] - 2026-10-24
 
 ### 中文
