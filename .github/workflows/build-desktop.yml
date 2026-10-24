@@ -1,0 +1,29 @@
+name: Build Desktop
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        working-directory: desktop
+        run: npm ci
+      - name: Build Windows installer
+        working-directory: desktop
+        run: npx electron-builder --win nsis --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LiShi-Workbench-Windows
+          path: desktop/dist/*.exe
