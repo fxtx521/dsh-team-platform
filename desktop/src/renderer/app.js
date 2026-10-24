@@ -488,6 +488,21 @@ function loadCapabilitiesWith(c) {
     toast(r && r.ok ? ('已切换模型: ' + model) : '切换失败');
     loadCapabilities();
   };
+  $$('[data-sample]').forEach(function (b) {
+    b.onclick = function () {
+      const i = $('#chatInput');
+      if (i) { i.value = b.dataset.sample; i.focus(); }
+    };
+  });
+  const kbc = $('#btnConsoleClear');
+  if (kbc) kbc.onclick = function () { const o = $('#consoleOut'); if (o) o.textContent = ''; };
+  const cmdEl = $('#consoleCmd');
+  if (cmdEl) {
+    cmdEl.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowUp') { e.preventDefault(); if (cmdHistory.length) { histIdx = Math.max(0, Math.min(histIdx - 1, cmdHistory.length - 1)); cmdEl.value = cmdHistory[histIdx] || ''; } }
+      if (e.key === 'ArrowDown') { e.preventDefault(); if (cmdHistory.length) { histIdx = Math.min(histIdx + 1, cmdHistory.length); cmdEl.value = cmdHistory[histIdx] || ''; } }
+    });
+  }
   const kbBtn = $('#btnKbPick');
   if (kbBtn) kbBtn.onclick = async () => {
     const r = await api.octopKbList();
@@ -581,6 +596,20 @@ let curKbId = "";
 
 // ── 右侧上下文面板 ─────────────────────────
 let ctxTab = "files";
+
+
+function friendlyError(raw) {
+  const s = String(raw || "");
+  if (!s) return "出了点问题，再试一次";
+  if (/unauthor|401|token/i.test(s)) return "登录已过期，请重新登录";
+  if (/ECONNREFUSED|ETIMEDOUT|ENOTFOUND|network|fetch failed/i.test(s)) return "连不上云端（检查网络或 Octop 地址）";
+  if (/not running/i.test(s)) return "助理还没启动，稍等几秒再试";
+  if (/skill\(s\) not found|disabled/i.test(s)) return "选的技能不可用，换一个试试";
+  if (/model/i.test(s) && /fail/i.test(s)) return "模型调用失败，换个模型或稍后再试";
+  if (/timeout|超时/i.test(s)) return "这次等的太久，任务可能还在跑，稍后看结果";
+  const cut = s.replace(/\{"detail".*$/s, "").replace(/\s+/g, " ").slice(0, 80);
+  return "出错了：" + cut;
+}
 
 function renderCtxChips() {
   const box = $("#chatCtxChips");
@@ -802,6 +831,8 @@ let chatMsgs = [];
 let attachments = [];  // 本轮对话附带的本地文件
 let pickedSkills = [];   // 本轮对话启用的技能
 let pickedKbs = [];      // 本轮对话引用的知识库
+let cmdHistory = [];     // 终端命令历史
+let histIdx = 0;
 
 // ── 会话管理（多会话，持久化到 localStorage）────────────────
 const SESS_KEY = 'lishi.sessions.v1';
@@ -882,7 +913,18 @@ function renderChat() {
   const s = getSession(); if (!s) return;
   const box = $('#chatBody');
   box.innerHTML = (s.msgs || []).map((m, i) => `<div class="msg ${m.role}">${m.role === 'ai' ? md(m.text) : esc(m.text)}${m.role === 'ai' ? `<span class="meta"><button class="mini" data-speak="${i}">🔊 朗读</button><button class="mini" data-save="${i}">保存到项目</button>${m.meta ? ' · ' + esc(m.meta) : ''}</span>` : (m.role === 'sys' ? `data-file="${esc(m.file || '')}" data-out="${i}" style="cursor:pointer" title="点开看内容/输出"` : (m.meta ? `<span class="meta">${esc(m.meta)}</span>` : ''))}</div>`).join('');
-  if (!s.msgs || !s.msgs.length) box.innerHTML = '<div class="msg ai">你好，我是团队 AI 助理。<br>直接说你要做什么——比如「把项目里的报价单整理成表」，我会在你本地文件夹里读写文件。</div>';
+  if (!s.msgs || !s.msgs.length) {
+    const samples = [
+      '把这个项目里的台账整理成一张表',
+      '核查这个客户的工商和涉诉信息',
+      '按模板起草一份标书初稿',
+      '把项目里的文件按类型分类整理',
+    ];
+    box.innerHTML = '<div class="msg ai">你好，我是团队 AI 助理。<br>直接说你要做什么，我会在你本地文件夹里读写文件。也可以点下面的例子试试：</div>' +
+      '<div class="samples">' + samples.map(function (t) {
+        return '<button class="sample" data-sample="' + esc(t) + '">' + esc(t) + '</button>';
+      }).join('') + '</div>';
+  }
   box.querySelectorAll('[data-speak]').forEach((el) => {
     el.onclick = async () => {
       const idx = parseInt(el.dataset.speak, 10);
@@ -945,7 +987,7 @@ async function sendChat() {
   tip.remove();
   // 只写回发起这条消息的会话（即使中途切走了）
   if (r && r.ok) s.msgs.push({ role: 'ai', text: r.data.reply || '(空)', meta: (r.data.elapsed_ms || 0) + 'ms' });
-  else s.msgs.push({ role: 'ai', text: '出错了：' + JSON.stringify((r && r.data) || {}).slice(0, 200) });
+  else s.msgs.push({ role: 'ai', text: '⚠️ ' + friendlyError((r && r.data && r.data.error) || JSON.stringify((r && r.data) || {})) });
   saveSessions();
   renderChat();
 }
@@ -1045,6 +1087,7 @@ function bind() {
   $('#btnClearLog').onclick = () => { if (SNAP) { SNAP.state.log = []; } $('#logBox').innerHTML = ''; };
   $('#btnRunCmd').onclick = async () => {
     const cmd = $('#consoleCmd').value.trim(); if (!cmd) return;
+    cmdHistory.push(cmd); histIdx = cmdHistory.length;
     const out = $('#consoleOut'); out.textContent += '\n$ ' + cmd;
     const r = await api.runCmd({ cmd, cwd: curProject ? curProject.dir : undefined });
     out.textContent += '\n' + (r.ok ? r.output : '[错误] ' + r.error);

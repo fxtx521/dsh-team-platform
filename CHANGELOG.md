@@ -5,6 +5,26 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ---
 
+## [0.36.0] - 2026-10-24
+
+### 中文
+
+- **对话示例提示词**：空会话显示 4 个例子（台账整理/客户核查/标书初稿/文件分类），点一下自动填入输入框
+- **终端增强**：加「清屏」按钮；命令历史支持 ↑/↓ 翻
+- **错误提示友好化**：不再直接甩 JSON/英文，统一成中文提示（登录过期/连不上云端/助理未启动/技能不可用/模型失败/超时）
+- 修复变量名重复导致的语法错误（`cc` 重复声明）
+- 截图核对：示例卡片与上下文标签不遮挡输入框
+
+### English
+
+- **Sample prompts**: empty chats show four examples (ledger, customer check, bid draft, file sorting); one click fills the composer
+- **Terminal**: Clear button plus command history via ArrowUp/ArrowDown
+- **Friendly errors**: raw JSON/English replaced with clear Chinese messages (expired login, unreachable cloud, agent not running, skill unavailable, model failure, timeout)
+- Fixed a syntax error from a duplicated variable name
+- Screenshots verified that samples and chips do not overlap the composer
+
+---
+
 ## [0.35.0] - 2026-10-24
 
 ### 中文

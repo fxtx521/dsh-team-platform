@@ -295,3 +295,8 @@ select{width:100%;border:1px solid var(--line);border-radius:11px;padding:10px 1
 .ctxchip span{cursor:pointer;opacity:.6}
 .ctxchip span:hover{opacity:1}
 
+
+.samples{display:flex;flex-wrap:wrap;gap:8px;padding:0 4px;margin-bottom:14px}
+.sample{border:1px solid var(--line);background:#fff;border-radius:999px;padding:7px 13px;font-size:12.5px;color:#374151;cursor:pointer;transition:.15s}
+.sample:hover{border-color:#ffb27a;background:#fff7f1;color:#9a3412}
+
