@@ -5,6 +5,24 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ---
 
+## [0.20.1] - 2026-10-24
+
+### 中文
+
+**本地能力扩展（MCP 工具从 4 个增加到 6 个）**
+- `local_find_files`：在已登记目录内按文件名关键字搜索（递归 4 层，最多 200 条）。
+- `local_open_path`：在访达/资源管理器中打开文件或目录（白名单内）。
+- 实测：搜索「.md」返回演示项目 2 个 markdown 文件。
+
+### English
+
+**Local tools extended (MCP tools 4 → 6)**
+- `local_find_files`: search files by name keyword inside registered folders (4 levels deep, max 200 hits).
+- `local_open_path`: reveal a file or folder in Finder/Explorer (whitelisted paths only).
+- Verified: searching ".md" returned two markdown files in the demo project.
+
+---
+
 ## [0.20.0] - 2026-10-24
 
 ### 中文

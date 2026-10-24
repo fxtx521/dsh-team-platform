@@ -587,6 +587,10 @@ function mcpTools() {
       inputSchema: { type: "object", properties: { file: { type: "string" } }, required: ["file"] } },
     { name: "local_write_file", description: "写入本地文件（仅限已登记目录）",
       inputSchema: { type: "object", properties: { file: { type: "string" }, content: { type: "string" } }, required: ["file", "content"] } },
+    { name: "local_find_files", description: "按文件名关键字在已登记目录里搜索文件",
+      inputSchema: { type: "object", properties: { dir: { type: "string" }, keyword: { type: "string" }, limit: { type: "number" } }, required: ["dir", "keyword"] } },
+    { name: "local_open_path", description: "在访达/资源管理器中打开文件或文件夹",
+      inputSchema: { type: "object", properties: { path: { type: "string" } }, required: ["path"] } },
     { name: "local_run_cmd", description: "在本地执行命令（需开启命令白名单）",
       inputSchema: { type: "object", properties: { cmd: { type: "string" }, cwd: { type: "string" } }, required: ["cmd"] } },
   ];
@@ -615,6 +619,36 @@ function mcpExec(tool, args) {
     fs.writeFileSync(f, String(args.content || ""), "utf8");
     log("MCP 写入: " + f);
     return "已写入 " + f;
+  }
+  if (tool === "local_find_files") {
+    const root = path.resolve(String(args.dir || ""));
+    if (!isInside(cfgRoots(), root)) throw new Error("目录不在白名单");
+    const kw = String(args.keyword || "").toLowerCase();
+    const limit = Math.min(Number(args.limit) || 50, 200);
+    const hits = [];
+    const walk = (d, depth) => {
+      if (hits.length >= limit || depth > 4) return;
+      let names = [];
+      try { names = fs.readdirSync(d); } catch { return; }
+      for (const n of names) {
+        if (n.startsWith(".") || n === "node_modules") continue;
+        const full = path.join(d, n);
+        let st = null;
+        try { st = fs.statSync(full); } catch {}
+        if (!st) continue;
+        if (st.isDirectory()) walk(full, depth + 1);
+        else if (n.toLowerCase().includes(kw)) hits.push(full + "  (" + st.size + "B)");
+        if (hits.length >= limit) return;
+      }
+    };
+    walk(root, 0);
+    return hits.length ? hits.join("\n") : "没有匹配的文件";
+  }
+  if (tool === "local_open_path") {
+    const p2 = path.resolve(String(args.path || ""));
+    if (!isInside(cfgRoots(), p2)) throw new Error("路径不在白名单");
+    shell.openPath(p2);
+    return "已打开: " + p2;
   }
   if (tool === "local_run_cmd") {
     if (!cfg.allowCommand) throw new Error("命令执行未开启");
