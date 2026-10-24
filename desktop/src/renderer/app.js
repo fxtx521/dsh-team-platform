@@ -674,8 +674,20 @@ function md(src) {
 function renderChat() {
   const s = getSession(); if (!s) return;
   const box = $('#chatBody');
-  box.innerHTML = (s.msgs || []).map((m, i) => `<div class="msg ${m.role}">${m.role === 'ai' ? md(m.text) : esc(m.text)}${m.role === 'ai' ? `<span class="meta"><button class="mini" data-save="${i}">保存到项目</button>${m.meta ? ' · ' + esc(m.meta) : ''}</span>` : (m.role === 'sys' ? `data-file="${esc(m.file || '')}" data-out="${i}" style="cursor:pointer" title="点开看内容/输出"` : (m.meta ? `<span class="meta">${esc(m.meta)}</span>` : ''))}</div>`).join('');
+  box.innerHTML = (s.msgs || []).map((m, i) => `<div class="msg ${m.role}">${m.role === 'ai' ? md(m.text) : esc(m.text)}${m.role === 'ai' ? `<span class="meta"><button class="mini" data-speak="${i}">🔊 朗读</button><button class="mini" data-save="${i}">保存到项目</button>${m.meta ? ' · ' + esc(m.meta) : ''}</span>` : (m.role === 'sys' ? `data-file="${esc(m.file || '')}" data-out="${i}" style="cursor:pointer" title="点开看内容/输出"` : (m.meta ? `<span class="meta">${esc(m.meta)}</span>` : ''))}</div>`).join('');
   if (!s.msgs || !s.msgs.length) box.innerHTML = '<div class="msg ai">你好，我是团队 AI 助理。<br>直接说你要做什么——比如「把项目里的报价单整理成表」，我会在你本地文件夹里读写文件。</div>';
+  box.querySelectorAll('[data-speak]').forEach((el) => {
+    el.onclick = async () => {
+      const idx = parseInt(el.dataset.speak, 10);
+      const msg = (s.msgs || [])[idx];
+      if (!msg) return;
+      el.textContent = '生成中…';
+      const r = await api.octopTts({ text: msg.text.slice(0, 800) });
+      el.textContent = '🔊 朗读';
+      if (r && r.ok) { await api.playAudio({ file: r.file }); toast('正在朗读（' + Math.round((r.bytes || 0) / 1024) + 'KB）'); }
+      else toast('朗读失败: ' + ((r && r.error) || ''));
+    };
+  });
   box.querySelectorAll('[data-file]').forEach((el) => {
     el.onclick = () => {
       const f = el.dataset.file;

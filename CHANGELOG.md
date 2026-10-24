@@ -5,6 +5,26 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ---
 
+## [0.27.0] - 2026-10-24
+
+### 中文
+
+**语音朗读打通（TTS + 本地播放）**
+- `POST /api/voice/tts` 指定 `provider=edge`（Edge 神经语音，免费、无需密钥）→ 返回 MP3（实测 15,264B）
+- 客户端每条 AI 回复新增「🔊 朗读」：生成 MP3 → 本机 `afplay` 播放（Windows 用系统播放器）
+- 实测：生成音频 15KB 并成功播放
+- STT 接口（`POST /api/voice/stt`、`WS /stt-stream`）存在，客户端录音输入待接
+
+### English
+
+**Speech output works (TTS + local playback)**
+- `POST /api/voice/tts` with `provider=edge` (free Edge neural voices, no key) returns MP3 (15,264B measured)
+- Every AI reply now has a 🔊 Speak button: generate MP3 → play locally with `afplay` (system player on Windows)
+- Verified: 15KB audio generated and played successfully
+- STT endpoints (`POST /api/voice/stt`, `WS /stt-stream`) exist; client microphone input is next
+
+---
+
 ## [0.26.0] - 2026-10-24
 
 ### 中文

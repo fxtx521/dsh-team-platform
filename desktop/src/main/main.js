@@ -569,6 +569,46 @@ async function octopModels() {
 
 
 // ── 用量统计 / 上下文用量 / 语音 ───────────────────
+
+// ── 语音朗读（TTS + 本地播放）────────────────────
+ipcMain.handle("octop:tts", async (_e, p) => {
+  const text = String((p && p.text) || "").slice(0, 2000);
+  if (!text) return { ok: false, error: "文本为空" };
+  const provider = (p && p.provider) || "edge";
+  const base = octopBase();
+  const resp = await new Promise((resolve) => {
+    const url = new URL(base + "/api/voice/tts");
+    const payload = JSON.stringify({ text, provider });
+    const req = (url.protocol === "https:" ? require("https") : require("http")).request({
+      hostname: url.hostname, port: url.port, path: url.pathname, method: "POST",
+      headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload), Authorization: "Bearer " + readCfg().octopToken },
+    }, (res) => {
+      const chunks = [];
+      res.on("data", (c) => chunks.push(c));
+      res.on("end", () => resolve({ status: res.statusCode, buf: Buffer.concat(chunks) }));
+    });
+    req.on("error", () => resolve({ status: 0, buf: Buffer.alloc(0) }));
+    req.write(payload); req.end();
+  });
+  if (resp.status !== 200 || !resp.buf.length) return { ok: false, error: "TTS 失败（status " + resp.status + "）" };
+  const dir = path.join(app.getPath("userData"), "voice");
+  try { fs.mkdirSync(dir, { recursive: true }); } catch {}
+  const file = path.join(dir, "tts-" + Date.now() + ".mp3");
+  fs.writeFileSync(file, resp.buf);
+  log("TTS 生成: " + file + " (" + resp.buf.length + "B)");
+  return { ok: true, file, bytes: resp.buf.length };
+});
+
+ipcMain.handle("local:playAudio", async (_e, p) => {
+  const f = String((p && p.file) || "");
+  if (!f || !fs.existsSync(f)) return { ok: false, error: "文件不存在" };
+  const { spawn } = require("child_process");
+  const cmd = process.platform === "win32" ? "powershell" : "afplay";
+  const args = process.platform === "win32" ? ["-NoProfile", "-Command", "Start-Process -FilePath \"" + f + "\""] : [f];
+  try { spawn(cmd, args, { detached: true, stdio: "ignore" }).unref(); return { ok: true }; }
+  catch (e) { return { ok: false, error: e.message }; }
+});
+
 ipcMain.handle("octop:usage", async () => {
   const r = await octopFetch("GET", "/api/usage/summary");
   const d = r.data || {};

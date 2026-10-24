@@ -30,13 +30,14 @@
 | 模型管理 | 当前模型切换（200） |
 | 用量统计 | 30 天 tokens/调用/命中率 |
 | 上下文用量 | 128k 窗口，已用 token |
+| 语音 TTS | Edge 神经语音，实测生成 15KB MP3 并播放 |
 
 ## 需配置 / Needs configuration
 
 | 能力 | 缺什么 |
 |---|---|
 | 渠道连通 | 飞书 app_id/app_secret、企微/微信凭证 |
-| 语音 | Octop 侧语音模型（接口已通但返回空音频）|
+| 语音 STT | 客户端录音输入（接口已通）|
 
 ## 该版本无公开接口 / No public API in this version
 
