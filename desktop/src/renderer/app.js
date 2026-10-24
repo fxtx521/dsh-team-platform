@@ -203,10 +203,11 @@ function go(view) {
   $$('.view').forEach((v) => v.classList.remove('active'));
   const el = $('#view-' + view); if (el) el.classList.add('active');
   $$('.nav-item').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
-  $('#crumb').textContent = { home: '概览', chat: '对话', projects: '我的项目', tasks: '任务', experiences: '经验', skills: '技能库', console: '终端', settings: '设置' }[view] || '';
+  $('#crumb').textContent = { home: '概览', chat: '对话', projects: '我的项目', tasks: '任务', experiences: '经验', capabilities: '云端能力', skills: '技能库', console: '终端', settings: '设置' }[view] || '';
   if (view === 'chat') bindChat();
   if (view === 'tasks') loadTasks();
   if (view === 'experiences') loadExperiences();
+  if (view === 'capabilities') loadCapabilities();
   if (view === 'skills') loadSkills();
   if (view === 'settings') fillSettings();
 }
@@ -298,6 +299,28 @@ function showTask(id) {
   $('#tdMeta').innerHTML = `<span class="badge ${t.status === 'done' ? 'ok' : 'run'}">${esc(t.status)}</span><span class="badge">${id.slice(0, 10)}</span><span class="badge">${fmtTime(t.created_at)}</span>`;
   $('#tdSteps').innerHTML = '<div class="tl"><b>任务创建</b><span>' + fmtTime(t.created_at) + '</span></div>' + (t.status === 'done' ? '<div class="tl"><b>执行完成</b><span>结果已回传云端</span></div>' : '<div class="tl"><b>执行中…</b></div>');
 }
+async function loadCapabilities() {
+  const box = $('#capsBody');
+  if (!api.octopCapabilities) { box.innerHTML = '<div class="sub">当前版本不支持</div>'; return; }
+  box.innerHTML = '<div class="sub">加载中…</div>';
+  const c = await api.octopCapabilities();
+  const sec = (title, body) => '<div style="margin:14px 0 6px;font-weight:600">' + title + '</div>' + body;
+  let html = '';
+  const subs = c.subagents || {};
+  html += sec('子代理（' + (subs.count || 0) + '）',
+    (subs.sample || []).slice(0, 8).map((s) => '<div class="item"><div class="t"><b>' + esc(s.name || s.slug) + '</b><span>' + esc(s.div || '') + '</span></div></div>').join('') || '<div class="sub">无</div>');
+  const prov = c.providers || {};
+  html += sec('模型供应商', (prov.items || []).map((p) => '<div class="item"><div class="t"><b>' + esc(p.name || p.id) + '</b></div>' + (p.active ? '<span class="badge ok">使用中</span>' : '') + '</div>').join('') || '<div class="sub">无</div>');
+  const ch = c.channels || {};
+  html += sec('渠道（当前助理）', (ch.items || []).length ? (ch.items || []).map((x) => '<div class="item"><div class="t"><b>' + esc(x.name || x.kind) + '</b></div></div>').join('') : '<div class="sub">未配置渠道（下一步接入扫码/机器人创建）</div>');
+  const br = c.browser || {};
+  html += sec('浏览器自动化', '<div class="sub">' + esc(JSON.stringify(br.data || {}).slice(0, 200)) + '</div>');
+  const tm = c.terminal || {};
+  html += sec('终端', '<div class="sub">' + esc(JSON.stringify(tm.data || {}).slice(0, 200)) + '</div>');
+  box.innerHTML = html;
+  const b = $('#btnCapsRefresh'); if (b) b.onclick = loadCapabilities;
+}
+
 async function loadExperiences() {
   if (api.octopMemory) {
     const mem = await api.octopMemory();

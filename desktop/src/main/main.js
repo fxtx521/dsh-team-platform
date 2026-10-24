@@ -419,6 +419,52 @@ async function octopCandidateAction(id, action) {
   return { ok: r.ok, error: r.ok ? "" : ((r.data && (r.data.detail || r.data.error)) || "") };
 }
 
+
+// ── 云端能力聚合（子代理/供应商/渠道/浏览器/终端/备份）────
+async function octopCapabilities() {
+  const aid = await ensureOctopAgent();
+  const out = { ok: true, agentId: aid };
+  const safe = async (fn) => { try { return await fn(); } catch (e) { return { ok: false, error: e.message }; } };
+  out.subagents = await safe(async () => {
+    const r = await octopFetch("GET", "/api/subagent-catalog");
+    const d = r.data || {};
+    const list = Array.isArray(d) ? d : (d.items || d.subagents || []);
+    return { ok: r.ok, count: list.length, sample: list.slice(0, 30).map((s) => ({
+      slug: s.slug || s.id, name: (s.label && (s.label.zh || s.label.en)) || s.name || s.slug, div: s.division || s.category || "" })) };
+  });
+  out.divisions = await safe(async () => {
+    const r = await octopFetch("GET", "/api/subagent-catalog/divisions");
+    return { ok: r.ok, items: r.data };
+  });
+  out.providers = await safe(async () => {
+    const r = await octopFetch("GET", "/api/providers");
+    const d = r.data || {};
+    const list = Array.isArray(d) ? d : (d.items || d.providers || []);
+    return { ok: r.ok, items: list.map((p) => ({ id: p.id || p.provider_id, name: p.name || p.label || p.kind, active: p.is_active || p.active || false })) };
+  });
+  out.channels = await safe(async () => {
+    const r = await octopFetch("GET", "/api/agents/" + aid + "/channels");
+    const d = r.data || [];
+    const list = Array.isArray(d) ? d : (d.items || []);
+    return { ok: r.ok, items: list.map((c) => ({ id: c.id, kind: c.kind || c.channel_type, name: c.name || c.title, enabled: c.enabled })) };
+  });
+  out.browser = await safe(async () => {
+    const r = await octopFetch("GET", "/api/browser/env-status");
+    return { ok: r.ok, data: r.data };
+  });
+  out.terminal = await safe(async () => {
+    const r = await octopFetch("GET", "/api/agents/" + aid + "/terminal/context");
+    return { ok: r.ok, data: r.data };
+  });
+  out.backup = await safe(async () => {
+    const r = await octopFetch("GET", "/api/admin/backup/status");
+    return { ok: r.ok, data: r.data };
+  });
+  return out;
+}
+
+ipcMain.handle('octop:capabilities', async () => await octopCapabilities());
+
 ipcMain.handle('octop:memory', async () => await octopMemoryCandidates());
 ipcMain.handle('octop:skills', async (_e, p) => await octopSkills(p && p.expertId));
 ipcMain.handle('octop:candidateAction', async (_e, p) => await octopCandidateAction(p && p.id, p && p.action));

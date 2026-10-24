@@ -18,6 +18,7 @@
       <button class="nav-item active" data-view="home"><span class="ico"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg></span>概览</button>
       <button class="nav-item" data-view="projects"><span class="ico"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span>我的项目</button>
       <button class="nav-item" data-view="tasks"><span class="ico"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 10h8M8 14h5"/></svg></span>任务</button>
+      <button class="nav-item" data-view="capabilities"><span class="ico"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg></span>云端能力</button>
       <button class="nav-item" data-view="experiences"><span class="ico"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/><circle cx="12" cy="12" r="4.2"/></svg></span>经验</button>
       <button class="nav-item" data-view="skills"><span class="ico"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/><circle cx="12" cy="12" r="4.2"/></svg></span>技能库</button>
       <button class="nav-item" data-view="console"><span class="ico"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="m7 10 3 2-3 2M13 14h4"/></svg></span>终端</button>
@@ -125,6 +126,13 @@
         <div class="card-h"><h3 id="tdTitle">任务详情</h3><button class="btn ghost" id="btnRunLocal">在本地执行</button></div>
         <div id="tdMeta" class="meta"></div>
         <div class="timeline" id="tdSteps"></div>
+      </div>
+    </section>
+
+    <section class="view" id="view-capabilities">
+      <div class="card">
+        <div class="card-h"><div><h3>云端能力（Octop）</h3><p class="sub">子代理、模型供应商、渠道、浏览器、终端、备份</p></div><button class="btn ghost" id="btnCapsRefresh">刷新</button></div>
+        <div id="capsBody"><div class="sub">加载中…</div></div>
       </div>
     </section>
 

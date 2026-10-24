@@ -5,6 +5,28 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ---
 
+## [0.19.0] - 2026-10-24
+
+### 中文
+
+**新增「云端能力」页**：把 Octop 的能力集中展示并接入。
+- 子代理目录（`/api/subagent-catalog`，分组与数量）
+- 模型供应商（`/api/providers`，含当前启用标记）
+- 渠道（`/api/agents/{id}/channels`，当前助理已配置的渠道）
+- 浏览器自动化环境（`/api/browser/env-status`）
+- 终端上下文（`/api/agents/{id}/terminal/context`）
+
+### English
+
+**Added a "Cloud capabilities" page** aggregating Octop capabilities.
+- Sub-agent catalog (`/api/subagent-catalog`, divisions + counts)
+- Model providers (`/api/providers`, with the active flag)
+- Channels for the current agent (`/api/agents/{id}/channels`)
+- Browser automation environment (`/api/browser/env-status`)
+- Terminal context (`/api/agents/{id}/terminal/context`)
+
+---
+
 ## [0.18.0] - 2026-10-24
 
 ### 中文
