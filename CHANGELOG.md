@@ -5,6 +5,22 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ---
 
+## [0.18.0] - 2026-10-24
+
+### 中文
+
+- **发布流程固化**：打 tag `vX.Y.Z` 时，GitHub Actions 自动构建 Windows 安装包并附加到对应 Release；macOS 包本地构建后上传。
+- 新增 `docs/octop-capabilities.md`：云端能力接入清单（本地访问已完成；云端已接 8 项，待接 15 项，按三批推进）。
+- 对话气泡 Markdown 渲染、专家/技能选择已包含在本版本。
+
+### English
+
+- **Release pipeline**: pushing a `vX.Y.Z` tag makes GitHub Actions build the Windows installer and attach it to the GitHub Release automatically; the macOS package is uploaded from the local machine.
+- Added `docs/octop-capabilities.md`: capability matrix (local access done; 8 cloud capabilities integrated, 15 pending, delivered in three batches).
+- Includes Markdown rendering in chat bubbles and the expert/skill pickers.
+
+---
+
 ## [0.17.1] - 2026-10-24
 
 ### 中文
