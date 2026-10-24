@@ -5,6 +5,30 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ---
 
+## [0.19.2] - 2026-10-24
+
+### 中文
+
+**修复（严重）：App 启动即退出**
+- `ipcMain.handle("cmd:run")` 被注册两次 → Electron 抛出 `Attempted to register a second handler`，主进程直接崩溃、窗口不出现。
+- 移除旧的 `/bin/sh` 版本，保留跨平台版本（Windows 用 `cmd.exe`）。
+
+**本地终端可用**
+- 客户端「终端」页恢复工作：在项目目录内执行命令，白名单 + 60 秒超时，输出回显；与内置 MCP 的 `local_run_cmd` 同一实现。
+- 实测：MCP `local_run_cmd` 执行 `ls` 返回演示项目 3 个文件。
+
+### English
+
+**Critical fix: the app quit right after launch**
+- `ipcMain.handle("cmd:run")` was registered twice → Electron threw `Attempted to register a second handler`, killing the main process (no window).
+- Removed the legacy `/bin/sh` handler; kept the cross-platform one (`cmd.exe` on Windows).
+
+**Local terminal works again**
+- The client terminal runs commands inside project folders with a whitelist and a 60s timeout; same implementation as the built-in MCP `local_run_cmd`.
+- Verified: MCP `local_run_cmd` with `ls` returned the demo project files.
+
+---
+
 ## [0.19.1] - 2026-10-24
 
 ### 中文

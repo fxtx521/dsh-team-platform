@@ -228,20 +228,6 @@ ipcMain.handle('project:saveBrief', (_e, { dir, content }) => {
 ipcMain.handle('project:openInFinder', (_e, dir) => { shell.openPath(dir); return true; });
 ipcMain.handle('project:reveal', (_e, file) => { shell.showItemInFolder(file); return true; });
 
-ipcMain.handle('cmd:run', async (_e, { cmd, cwd }) => {
-  const cfg = readCfg();
-  if (!cfg.allowCommand) return { ok: false, error: '命令执行未开启（设置 → 允许执行命令）' };
-  const bin = String(cmd || '').trim().split(/\s+/)[0];
-  if (!cfg.cmdWhitelist.includes(bin)) return { ok: false, error: '不在白名单: ' + bin };
-  const wd = cwd && isInside(cfgRoots(), path.resolve(cwd)) ? path.resolve(cwd) : cfg.projectRoot;
-  return await new Promise((resolve) => {
-    execFile('/bin/sh', ['-c', cmd], { cwd: wd, timeout: 60000, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
-      const out = (stdout || '') + (stderr ? '\n[stderr] ' + stderr : '');
-      log('命令: ' + cmd + ' → ' + (err ? '失败' : '成功'));
-      resolve({ ok: !err, output: out.slice(0, 20000), code: err ? err.code : 0 });
-    });
-  });
-});
 
 ipcMain.handle('cloud:heartbeat', async () => { await heartbeat(); return snapshot(); });
 ipcMain.handle('cloud:tasks', async () => {
@@ -346,6 +332,26 @@ function startPoller() {
 
 ipcMain.handle('cloud:mySummary', async () => {
   return await api('GET', '/v1/my/summary');
+});
+
+ipcMain.handle('cmd:run', async (_e, { cmd, cwd }) => {
+  const cfg = readCfg();
+  if (cfg.allowCommand === false) return { ok: false, error: '命令执行已在设置里关闭' };
+  const line = String(cmd || '').trim();
+  if (!line) return { ok: false, error: '命令为空' };
+  const bin = line.split(/\s+/)[0];
+  if (!(cfg.cmdWhitelist || []).includes(bin)) return { ok: false, error: '不在命令白名单: ' + bin };
+  let wd = cfg.projectRoot || os.homedir();
+  if (cwd && isInside(cfgRoots(), path.resolve(cwd))) wd = path.resolve(cwd);
+  try {
+    const shell = process.platform === 'win32' ? 'cmd.exe' : '/bin/sh';
+    const args = process.platform === 'win32' ? ['/c', line] : ['-c', line];
+    const out = requireChild(shell, args, wd);
+    log('本地执行: ' + line);
+    return { ok: true, output: out };
+  } catch (e) {
+    return { ok: false, error: String(e.message || e).slice(0, 800) };
+  }
 });
 
 ipcMain.handle('mcp:toggle', async (_e, on) => {
