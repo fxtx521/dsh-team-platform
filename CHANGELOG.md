@@ -5,6 +5,32 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ---
 
+## [0.20.0] - 2026-10-24
+
+### 中文
+
+**云端能力页扩展（批次二/三）**
+- 插件：`GET /api/plugins`（当前 0 个）
+- 当前助理子代理：`GET /api/agents/{id}/subagents`（如「通用子智能体」）
+- 可接入渠道类型：`GET /api/channels/plugin-kinds`（当前 Octop 未启用渠道插件）
+- 浏览器会话：`GET /api/browser/harness-sessions`（环境 headless-server，会话 0）
+- 账号：`GET /api/users`（管理员可见）
+- 备份：`GET /api/admin/backup/status|list`（空闲，备份文件 0）
+- 能力矩阵文档更新：区分「已接 / 需配置 / 无接口」
+
+### English
+
+**Capabilities page extended (batches 2–3)**
+- Plugins (`GET /api/plugins`, currently 0)
+- Agent sub-agents (`GET /api/agents/{id}/subagents`, e.g. general-purpose)
+- Channel kinds (`GET /api/channels/plugin-kinds`; no channel plugin enabled yet)
+- Browser sessions (`GET /api/browser/harness-sessions`, headless-server, 0 sessions)
+- Users (`GET /api/users`, admin only)
+- Backup (`GET /api/admin/backup/status|list`, idle, 0 files)
+- Capability matrix now distinguishes integrated / needs-config / no-API
+
+---
+
 ## [0.19.2] - 2026-10-24
 
 ### 中文

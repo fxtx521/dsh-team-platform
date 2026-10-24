@@ -1,58 +1,54 @@
 # Octop 能力接入清单 / Capability Matrix
 
-目标：桌面客户端把云端（Octop）能力**全部接过来**，同时保留「访问本地电脑」的独有能力（内置 MCP）。
-Goal: bring **all** cloud (Octop) capabilities into the desktop client, while keeping the unique local-computer access via the built-in MCP server.
+> 更新：2026-10-24（v0.20.0）。状态：✅ 已接入并实测 · ⚠️ 接口存在但需配置 · ❌ 该版本无公开接口 · ⏳ 待做
 
-## 一、本地电脑访问（客户端独有能力）/ Local machine access (client-only)
+## 一、本地电脑访问（客户端独有）/ Local machine access
 
-| 能力 Capability | 状态 Status |
-|---|---|
-| 列目录 list dir | ✅ MCP `local_list_dir` |
-| 读文件 read file | ✅ MCP `local_read_file` |
-| 写文件 write file | ✅ MCP `local_write_file` |
-| 执行命令 run command | ✅ MCP `local_run_cmd`（白名单 + 超时）|
-| 项目目录白名单 sandbox | ✅ |
-| 搜索文件 / 批量 / 剪贴板 / 打开应用 | ⏳ 规划中 planned |
-
-## 二、云端能力（Octop）/ Cloud capabilities
-
-| 能力 Capability | 接口 API | 状态 Status |
+| 能力 | 状态 | 说明 |
 |---|---|---|
-| 登录 login | `POST /api/auth/login` | ✅ |
-| 专家库 experts | `GET /api/experts` | ✅ |
-| 助理 agents | `GET/POST/PATCH /api/agents` | ✅ |
-| 会话 threads | `POST /api/agents/{id}/threads` | ✅ |
-| 对话 chat | `WS /api/agents/{id}/chat/ws` | ✅ |
-| 技能 skills | `GET /api/agents/{id}/skills` | ✅ 读取 + 选择下发 |
-| 经验/记忆 memory | `/api/agents/{id}/memory/*` | ✅ 候选读取 + 通过/驳回 |
-| 连接器 connectors（自定义 MCP）| `/api/connectors/custom-mcp` | ✅ |
-| 知识库 knowledge bases | `/api/knowledge_bases/*` | ⏳ 批次一 |
-| 任务 tasks | `/api/tasks/*` | ⏳ 批次一 |
-| 联网搜索 search | `/api/search/*` | ⏳ 批次一 |
-| 终端 terminal | `WS /api/agents/{id}/terminal/ws` | ⏳ 批次一 |
-| 浏览器自动化 browser | `/api/browser/*` | ⏳ 批次二 |
-| 插件 plugins | `/api/plugins/*` | ⏳ 批次二 |
-| 渠道 channels | `/api/channels/*` | ⏳ 批次二 |
-| 子代理 subagents | `/api/subagents/*` | ⏳ 批次二 |
-| 语音 voice | `/stt-stream`、tts | ⏳ 批次三 |
-| 观测 observability | `/api/observability/*` | ⏳ 批次三 |
-| 模型/供应商 providers | `/api/providers/*` | ⏳ 批次三 |
-| 用户与权限 users | `/api/users/*` | ⏳ 批次三 |
-| 备份 backup | `/api/backup/*` | ⏳ 批次三（管理端）|
+| 列目录 | ✅ | MCP `local_list_dir` |
+| 读文件 | ✅ | MCP `local_read_file` |
+| 写文件 | ✅ | MCP `local_write_file` |
+| 执行命令 | ✅ | MCP `local_run_cmd` + 客户端终端（白名单、60s 超时）|
+| 目录白名单 | ✅ | 只允许登记过的项目目录 |
+| 文件搜索 / 剪贴板 / 打开应用 | ⏳ | 下一批扩展 |
 
-## 三、接入批次 / Planned batches
+## 二、云端能力 / Cloud capabilities
 
-1. **批次一（业务高频）**：知识库、任务、联网搜索、终端
-2. **批次二（自动化）**：浏览器、插件、渠道、子代理
-3. **批次三（管理/增强）**：语音、观测、模型供应商、用户权限、备份
+| 能力 | 接口 | 状态 |
+|---|---|---|
+| 登录 | `POST /api/auth/login` | ✅ |
+| 专家库 | `GET /api/experts` | ✅ 22 个 |
+| 助理 | `/api/agents` | ✅ |
+| 会话 | `POST /api/agents/{id}/threads` | ✅ |
+| 对话 | `WS /api/agents/{id}/chat/ws` | ✅ |
+| 技能 | `GET /api/agents/{id}/skills` | ✅ 24 条，可选择下发 |
+| 记忆/经验 | `/api/agents/{id}/memory/*` | ✅ 候选 9 条，可通过/驳回 |
+| 连接器（自定义 MCP）| `/api/connectors/custom-mcp` | ✅ |
+| 知识库 | `/api/knowledge-bases` | ⚠️ 列表可用（0 个）；需先配置向量模型 |
+| 技能市场 | `/api/skill-packages/hub/search` | ✅ |
+| 子代理目录 | `/api/subagent-catalog` | ✅ |
+| 当前助理子代理 | `/api/agents/{id}/subagents` | ✅ |
+| 模型供应商 | `/api/providers` | ✅ |
+| 渠道 | `/api/agents/{id}/channels`、`/api/channels/plugin-kinds` | ✅ 列表可用（当前为空）|
+| 浏览器 | `/api/browser/env-status`、`/api/browser/harness-sessions` | ✅ 状态可读（headless-server）|
+| 终端 | `/api/agents/{id}/terminal/context` | ✅ |
+| 用户 | `/api/users` | ✅ 管理员可见 |
+| 备份 | `/api/admin/backup/status`、`/api/admin/backup/list` | ✅ |
+| 任务 | — | ❌ 该版本未暴露 REST 接口 |
+| 观测 observability | — | ❌ 仅控制台，无公开 REST |
+| 语音 voice | `WS /stt-stream`（助手侧）| ❌ 客户端侧未开放 |
+
+## 三、待做 / Next
+
+1. 渠道实操：飞书/企微/微信扫码与机器人创建（需 Octop 启用渠道插件）
+2. 浏览器实操：安装/启动/会话接管（当前环境 headless-server）
+3. 知识库：配置向量模型后建库、上传文档、检索
+4. 本地扩展工具：文件搜索、批量处理、剪贴板、打开应用
+5. 语音：等 Octop 开放客户端接口
 
 ## 四、发布流程 / Release flow
 
-- 打 tag `vX.Y.Z` → GitHub Actions 在 `windows-latest` 构建 Windows 安装包并**自动附加到 Release**
-- macOS 包在本机构建后上传到同一 Release
-- 每个版本更新 `CHANGELOG.md`（中英双语）
-
-## 五、GitHub Actions 额度 / Quota
-
-- 仓库为 **public** → Actions **不限制用量**（免费）
-- 私有仓库免费额度 2000 分钟/月；单次 Windows 构建约 6–8 分钟
+- 改动 → 本机实测 → 打 tag `vX.Y.Z` → GitHub Actions 自动构建 Windows 并附加到 Release；macOS 包本地上传
+- 每版更新 `CHANGELOG.md`（中英双语）
+- 仓库 public：Actions 免费不限量（Windows 单次约 6–8 分钟）

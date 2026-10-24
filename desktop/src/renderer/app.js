@@ -310,6 +310,20 @@ function loadCapabilitiesWith(c) {
   const box = $('#capsBody');
   const sec = (title, body) => '<div style="margin:14px 0 6px;font-weight:600">' + title + '</div>' + body;
   let html = '';
+  const us = c.users || {};
+  html += sec('账号（' + (us.count || 0) + '）', (us.items || []).map((u) => '<div class="item"><div class="t"><b>' + esc(u.name || u.username) + '</b><span>' + esc(u.username) + '</span></div><span class="badge ok">' + esc(u.role) + '</span></div>').join('') || '<div class="sub">无</div>');
+  const bk = c.backupState || {};
+  html += sec('备份', '<div class="sub">' + (bk.busy ? '正在备份…' : '空闲') + ' · 备份文件 ' + (bk.count || 0) + ' 个' + (bk.latest ? ' · 最近：' + esc(bk.latest) : '') + '</div>');
+  const pl = c.plugins || {};
+  html += sec('插件（' + (pl.count || 0) + '）', (pl.items || []).map((p) => '<div class="item"><div class="t"><b>' + esc(p.name || p.id) + '</b></div>' + (p.enabled === false ? '' : '<span class="badge ok">启用</span>') + '</div>').join('') || '<div class="sub">未安装插件</div>');
+  const asub = c.agentSubagents || {};
+  html += sec('当前助理的子代理（' + ((asub.items || []).length) + '）',
+    (asub.items || []).map((s) => '<div class="item"><div class="t"><b>' + esc(s.name || s.slug) + '</b><span>' + esc(s.desc || '') + '</span></div></div>').join('') || '<div class="sub">无</div>');
+  const ck = c.channelKinds || {};
+  html += sec('可接入渠道类型（' + ((ck.items || []).length) + '）',
+    (ck.items || []).map((k) => '<div class="item"><div class="t"><b>' + esc(k.name || k.kind) + '</b></div></div>').join('') || '<div class="sub">当前 Octop 未启用渠道插件</div>');
+  const bs = c.browserSessions || {};
+  html += sec('浏览器会话', '<div class="sub">环境：' + esc(bs.environment || '-') + ' · 会话数 ' + (bs.count || 0) + '</div>');
   const kb = c.knowledge || {};
   html += sec('知识库（' + (kb.count || 0) + '）',
     ((kb.items || []).map((k) => '<div class="item"><div class="t"><b>' + esc(k.name || k.id) + '</b><span>文档 ' + (k.docs || 0) + '</span></div></div>').join('') || '<div class="sub">还没有知识库</div>') +

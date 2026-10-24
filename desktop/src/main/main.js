@@ -462,6 +462,42 @@ async function octopCapabilities(search) {
     const r = await octopFetch("GET", "/api/agents/" + aid + "/terminal/context");
     return { ok: r.ok, data: r.data };
   });
+  out.users = await safe(async () => {
+    const r = await octopFetch("GET", "/api/users");
+    const d = r.data || [];
+    const list = Array.isArray(d) ? d : (d.items || []);
+    return { ok: r.ok, count: list.length, items: list.slice(0, 20).map((u) => ({ username: u.username, role: u.role, name: u.display_name || "" })) };
+  });
+  out.backupState = await safe(async () => {
+    const [st, ls] = await Promise.all([
+      octopFetch("GET", "/api/admin/backup/status"),
+      octopFetch("GET", "/api/admin/backup/list"),
+    ]);
+    const items = ((ls.data && ls.data.items) || []);
+    return { ok: st.ok, busy: !!(st.data && st.data.busy), count: items.length,
+             latest: items.length ? (items[items.length - 1].filename || items[items.length - 1].name || "") : "" };
+  });
+  out.plugins = await safe(async () => {
+    const r = await octopFetch("GET", "/api/plugins");
+    const d = r.data || [];
+    const list = Array.isArray(d) ? d : (d.items || []);
+    return { ok: r.ok, count: list.length, items: list.slice(0, 20).map((p) => ({ id: p.id || p.name, name: p.name || p.id, enabled: p.enabled })) };
+  });
+  out.agentSubagents = await safe(async () => {
+    const r = await octopFetch("GET", "/api/agents/" + aid + "/subagents");
+    const d = r.data || [];
+    const list = Array.isArray(d) ? d : (d.items || []);
+    return { ok: r.ok, items: list.map((s) => ({ slug: s.slug, name: s.name, desc: String(s.description || "").slice(0, 70) })) };
+  });
+  out.channelKinds = await safe(async () => {
+    const r = await octopFetch("GET", "/api/channels/plugin-kinds");
+    const d = r.data || [];
+    return { ok: r.ok, items: (Array.isArray(d) ? d : []).map((k) => ({ kind: k.kind || k.id, name: k.name || k.label || k.kind })) };
+  });
+  out.browserSessions = await safe(async () => {
+    const r = await octopFetch("GET", "/api/browser/harness-sessions");
+    return { ok: r.ok, environment: (r.data && r.data.environment) || "", count: ((r.data && r.data.sessions) || []).length };
+  });
   out.knowledge = await safe(async () => {
     const [list, cap] = await Promise.all([
       octopFetch("GET", "/api/knowledge-bases"),
