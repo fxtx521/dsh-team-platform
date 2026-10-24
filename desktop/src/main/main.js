@@ -544,6 +544,12 @@ async function octopCapabilities(search) {
 
 ipcMain.handle('octop:capabilities', async (_e, p) => await octopCapabilities(p && p.search));
 
+ipcMain.handle('octop:browserInstall', async () => {
+  log('开始安装浏览器运行时…');
+  const r = await octopFetch("POST", "/api/browser/install", {});
+  return { ok: r.ok, data: r.data };
+});
+
 ipcMain.handle('octop:kbUpload', async (_e, { kbId, name, content, format }) => {
   const r = await octopFetch("POST", "/api/knowledge-bases/" + encodeURIComponent(kbId) + "/documents/text",
     { name: name || "未命名.txt", content: String(content || ""), format: format || "txt" });

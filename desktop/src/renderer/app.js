@@ -329,7 +329,11 @@ function loadCapabilitiesWith(c) {
   html += sec('可接入渠道类型（' + ((ck.items || []).length) + '）',
     (ck.items || []).map((k) => '<div class="item"><div class="t"><b>' + esc(k.name || k.kind) + '</b></div></div>').join('') || '<div class="sub">当前 Octop 未启用渠道插件</div>');
   const bs = c.browserSessions || {};
-  html += sec('浏览器会话', '<div class="sub">环境：' + esc(bs.environment || '-') + ' · 会话数 ' + (bs.count || 0) + '</div>');
+  const bEnv = (c.browser && c.browser.data) || {};
+  html += sec('浏览器',
+    '<div class="sub">环境：' + esc(bs.environment || '-') + ' · 会话数 ' + (bs.count || 0) + '</div>' +
+    '<div class="sub">' + (bEnv.browsers_ok ? 'Chromium 已就绪' : ('未安装：' + esc(bEnv.error || ''))) + '</div>' +
+    (bEnv.browsers_ok ? '' : '<button class="btn ghost" id="btnBrowserInstall" style="margin-top:8px">安装浏览器运行时</button>'));
   const kb = c.knowledge || {};
   html += sec('知识库（' + (kb.count || 0) + '）',
     ((kb.items || []).map((k) => '<div class="item"><div class="t"><b>' + esc(k.name || k.id) + '</b><span>文档 ' + (k.docs || 0) + '</span></div><button class="mini" data-kbup="' + esc(k.id) + '">上传本地文件</button></div>').join('') || '<div class="sub">还没有知识库</div>') +
@@ -351,6 +355,13 @@ function loadCapabilitiesWith(c) {
   html += sec('终端', '<div class="sub">' + esc(JSON.stringify(tm.data || {}).slice(0, 200)) + '</div>');
   box.innerHTML = html;
   const b = $('#btnCapsRefresh'); if (b) b.onclick = loadCapabilities;
+  const bi = $('#btnBrowserInstall');
+  if (bi) bi.onclick = async () => {
+    bi.textContent = '安装中…（几分钟）';
+    const r = await api.octopBrowserInstall();
+    toast(r && r.ok ? '已在服务端开始安装 Chromium，稍后刷新查看' : '安装请求失败');
+    setTimeout(loadCapabilities, 5000);
+  };
   $$('[data-kbup]').forEach((btn) => {
     btn.onclick = async () => {
       const p = (SNAP?.cfg?.projects || [])[0];
