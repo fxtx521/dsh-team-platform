@@ -5,6 +5,26 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ---
 
+## [0.34.0] - 2026-10-24
+
+### 中文
+
+- **新手引导**：首次打开弹三步引导（选项目 → 直接说事 → 产物自动存），点「知道了」后不再出现
+- **经验页卡片化**：经验候选显示为卡片（标题/类型/状态），主管可直接「通过 / 驳回」
+- **项目文件卡片化**：文件列表改成卡片网格，悬停高亮，避免长文件名排版错乱
+- 顺手修掉重复的 `requireLogin()` 调用
+- 每页仍用无头渲染截图复核（经验页/项目页/概览页）
+
+### English
+
+- **Onboarding**: a three-step welcome on first launch (pick a project → just ask → artifacts are saved), dismissed permanently after clicking Got it
+- **Experiences as cards**: candidates show title/type/status with promote/reject actions
+- **Project files as cards**: the file list is now a card grid with hover states
+- Removed a duplicated `requireLogin()` call
+- Pages re-checked with headless screenshots
+
+---
+
 ## [0.33.0] - 2026-10-24
 
 ### 中文

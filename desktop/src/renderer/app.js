@@ -37,6 +37,11 @@ const api = window.wb || {
   runCmd: async () => ({ ok: true, output: '（预览模式，未执行真实命令）' }),
   chat: async (m) => ({ ok: true, data: { reply: '（预览模式）收到：' + m, elapsed_ms: 3200 } }),
   login: async () => ({ ok: true, user: { display_name: '演示员工' } }),
+  octopMemory: async () => ({ ok: true, items: [
+    { id: 'c1', title: '客户核查先查工商再查涉诉', kind: 'Fact', status: 'pending' },
+    { id: 'c2', title: '台账判重：同名+同金额+同日期', kind: 'Fact', status: 'approved' },
+    { id: 'c3', title: '标书先出目录再填正文', kind: 'Episode', status: 'pending' },
+  ] }),
   octopExperts: async () => ({ ok: true, items: [
     { id: 'general-assistant', name: '小通 · 通用助手', desc: '通用任务' },
     { id: 'business-operations', name: '业务流程专家', desc: 'SOP 与流程优化' },
@@ -1056,6 +1061,12 @@ function bind() {
   };
   const er = $("#btnExpertRefresh");
   if (er) er.onclick = loadExpertsPage;
+  const onb = $("#btnOnboardOk");
+  if (onb) onb.onclick = async () => {
+    await api.saveConfig({ onboarded: true });
+    $("#onboardModal").classList.remove("show");
+    await refresh();
+  };
   const oc = $("#btnOpenCaps");
   if (oc) oc.onclick = () => go("capabilities");
 
@@ -1101,7 +1112,10 @@ async function loadMe() {
   await loadMe();
   await refresh();
   requireLogin();
-  requireLogin();
+  if (SNAP && SNAP.cfg && SNAP.cfg.onboarded !== true) {
+    const om = $("#onboardModal");
+    if (om && SNAP.cfg.octopToken) om.classList.add("show");
+  }
   const h = (location.hash || '').replace('#', '');
   go(h || 'chat');
   if (location.search.includes('modal=1')) openTaskModal(location.search.includes('tpl=ledger') ? 'ledger' : (location.search.includes('tpl=bid') ? 'bid' : 'verify'));

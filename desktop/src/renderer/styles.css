@@ -280,3 +280,11 @@ select{width:100%;border:1px solid var(--line);border-radius:11px;padding:10px 1
 .adv[open]>summary:before{content:"▾ "}
 .adv[open]>summary{border-bottom-left-radius:0;border-bottom-right-radius:0}
 
+
+/* 新手引导 + 卡片化 */
+.onboard-step{margin-bottom:12px}
+.onboard-step b{display:block;font-size:13.5px;margin-bottom:3px}
+.filelist{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px}
+.file{border:1px solid var(--line);border-radius:11px;padding:9px 11px;background:#fff;transition:.12s}
+.file:hover{box-shadow:var(--ring);transform:translateY(-1px)}
+

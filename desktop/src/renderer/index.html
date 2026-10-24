@@ -159,7 +159,7 @@
       <div class="card">
         <div class="card-h"><div><h3>我的经验 / 团队沉淀</h3><p class="sub">任务自动提炼出的经验候选，审核后进技能库。</p></div><button class="btn ghost" id="btnRefreshExp">刷新</button></div>
         <div id="expStats" class="row-stats" style="margin-bottom:12px"></div>
-        <div id="expList" class="list"></div>
+        <div id="expList" class="grid2" style="padding:4px 0"></div>
       </div>
     </section>
 
@@ -240,6 +240,18 @@
     </section>
   </main>
 </div>
+<div class="modal-mask" id="onboardModal">
+  <div class="modal" style="width:560px">
+    <div class="modal-h"><h3>欢迎使用砺 · 工作台</h3></div>
+    <div class="modal-b">
+      <div class="onboard-step"><b>① 选一个项目</b><p class="sub">把你的工作文件夹登记进来，AI 只在这个目录里读写文件。</p></div>
+      <div class="onboard-step"><b>② 选个项目 / 专家，直接说要做的事</b><p class="sub">例如「把这个项目的台账整理成表」，它会读文件、干活、给出结果。</p></div>
+      <div class="onboard-step"><b>③ 结果会自动存成产物</b><p class="sub">对话里点「保存到项目」，文件进 产出/ 目录，右侧「产物」能看到。</p></div>
+    </div>
+    <div class="modal-f"><button class="btn primary" id="btnOnboardOk">知道了，开始</button></div>
+  </div>
+</div>
+
 <div class="modal-mask" id="loginModal">
   <div class="modal" style="width:420px">
     <div class="modal-h"><h3>登录 · 砺工作台</h3></div>
