@@ -682,8 +682,20 @@ function isInside(roots, target) {
 app.whenReady().then(() => {
   createWindow();
   createTray();
+  // 免手动登录：读取工作区的 .octop-token（如果存在）自动写入配置
+  try {
+    const cfg0 = readCfg();
+    const tf = path.join('/Users/liubang/Documents/deepseek-harness/default-workspace', '.octop-token');
+    if (!cfg0.octopToken && fs.existsSync(tf)) {
+      const tok = fs.readFileSync(tf, 'utf8').trim();
+      if (tok) {
+        writeCfg({ ...cfg0, octopToken: tok, octopUrl: cfg0.octopUrl || 'http://8.140.227.88:18090' });
+        log('已从工作区自动配置 Octop token');
+      }
+    }
+  } catch (e) { log('自动配置失败: ' + e.message); }
   const _c = readCfg();
-  log('启动 · server=' + _c.serverUrl + ' ref=' + (process.env.ELECTRON_RUN_AS_NODE || 'no') + ' pid=' + process.pid);
+  log('启动 · server=' + _c.serverUrl + ' octop=' + (_c.octopUrl || '-') + ' tok=' + (_c.octopToken ? 'yes' : 'no') + ' pid=' + process.pid);
   setTimeout(heartbeat, 1500);
   setInterval(heartbeat, 60 * 1000);
   setTimeout(startPoller, 2500);

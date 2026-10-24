@@ -265,24 +265,43 @@ function showTask(id) {
   $('#tdSteps').innerHTML = '<div class="tl"><b>任务创建</b><span>' + fmtTime(t.created_at) + '</span></div>' + (t.status === 'done' ? '<div class="tl"><b>执行完成</b><span>结果已回传云端</span></div>' : '<div class="tl"><b>执行中…</b></div>');
 }
 async function loadExperiences() {
-  const r = await api.mySummary ? await api.mySummary() : { ok: false };
-  const d = (r && r.data) || {};
-  const exps = d.experiences || [];
-  const st = d.stats || {};
-  $('#expStats').innerHTML = `<span>经验总数 <b>${st.experiences || 0}</b></span><span>待审 <b>${st.pending_experience || 0}</b></span><span>技能 <b>${st.skills || 0}</b></span>`;
-  const badge = (s) => s === 'approved' ? '<span class="badge ok">已入库</span>' : (s === 'rejected' ? '<span class="badge err">已驳回</span>' : '<span class="badge run">待审</span>');
-  const canApprove = !!(ME && (ME.permissions || []).includes('*') || (ME.permissions || []).includes('experience.approve'));
-  $('#expList').innerHTML = exps.map((e) => `<div class="item" style="align-items:flex-start"><div class="t"><b>${esc(cleanTitle(e.title))}</b><span style="white-space:pre-wrap;display:block;margin-top:4px;color:#6b7280">${esc((e.brief || '').slice(0, 160))}</span>${canApprove && e.status === 'pending' ? `<span style="display:inline-flex;gap:6px;margin-top:8px"><button class="mini" data-exp="${e.id}" data-act="approve">通过</button><button class="mini" data-exp="${e.id}" data-act="reject">驳回</button></span>` : ''}</div>${badge(e.status)}</div>`).join('') || '<div class="sub">还没有经验，多在客户端干活会自动沉淀</div>';
-  $$('#expList [data-exp]').forEach((b) => {
-    b.onclick = async () => {
-      const r = await api.expAction({ id: b.dataset.exp, action: b.dataset.act });
-      toast(r && r.ok ? (b.dataset.act === 'approve' ? '已入库' : '已驳回') : ('操作失败：' + JSON.stringify(r && r.data || {}).slice(0, 80)));
-      loadExperiences();
+  if (api.octopMemory) {
+    const mem = await api.octopMemory();
+    const sk = api.octopSkills ? await api.octopSkills() : { items: [] };
+    const items = (mem && mem.items) || [];
+    const skills = (sk && sk.items) || [];
+    $('#expStats').innerHTML = '<span>经验候选 <b>' + items.length + '</b></span><span>技能 <b>' + skills.length + '</b></span>';
+    const badge = function (s2) {
+      if (s2 === 'approved' || s2 === 'promoted') return '<span class="badge ok">已入库</span>';
+      if (s2 === 'rejected') return '<span class="badge err">已驳回</span>';
+      return '<span class="badge run">待审</span>';
     };
-  });
-  const b = $('#btnRefreshExp'); if (b) b.onclick = loadExperiences;
+    const perms = (ME && ME.permissions) || [];
+    const canApprove = perms.indexOf('*') >= 0 || perms.indexOf('experience.approve') >= 0;
+    $('#expList').innerHTML = items.map(function (e) {
+      const title = String(e.title || '').slice(0, 60);
+      let btns = '';
+      if (canApprove && e.status === 'pending') {
+        btns = '<span style="display:inline-flex;gap:6px;margin-top:8px">' +
+          '<button class="mini" data-cand="' + e.id + '" data-act="promote">通过</button>' +
+          '<button class="mini" data-cand="' + e.id + '" data-act="reject">驳回</button></span>';
+      }
+      return '<div class="item" style="align-items:flex-start"><div class="t"><b>' + esc(title) + '</b>' +
+        '<span style="display:block;margin-top:4px;color:#6b7280">' + esc(e.kind || '') + '</span>' + btns +
+        '</div>' + badge(e.status) + '</div>';
+    }).join('') || '<div class="sub">还没有经验候选（Octop 会在对话后自动抽取）</div>';
+    $('#expList').querySelectorAll('[data-cand]').forEach(function (b) {
+      b.onclick = async function () {
+        const r = await api.octopCandidateAction({ id: b.dataset.cand, action: b.dataset.act });
+        toast(r && r.ok ? '已处理' : ('失败：' + ((r && r.error) || '')));
+        loadExperiences();
+      };
+    });
+    const rb = $('#btnRefreshExp');
+    if (rb) rb.onclick = loadExperiences;
+    return;
+  }
 }
-
 async function loadSkills() {
   const r = await api.skills(); curSkills = (r && r.data && r.data.items) || [];
   $('#skillList').innerHTML = curSkills.map((s) => `<div class="item"><div class="t"><b>${esc(s.name)}</b><span>v${s.version || 1} · 云端下发</span></div><span class="badge ok">已同步</span></div><div class="sub" style="white-space:pre-wrap;padding:0 12px 10px">${esc((s.content || '').slice(0, 200))}</div>`).join('') || '<div class="sub">还没有技能，先去云端技能库添加</div>';

@@ -5,6 +5,22 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ---
 
+## [0.14.0] - 2026-10-24
+
+### 中文
+
+- **经验沉淀接 Octop**：客户端「经验」页直接读取 Octop 的 `memory/candidates`（经验候选）与 agent `skills`（技能），主管可通过 / 驳回。
+- **免手动登录**：客户端启动时若检测到工作区 `.octop-token`，自动写入配置并连接 Octop（无需点登录框，也不依赖界面操控）。
+- 自动登录后日志输出「已从工作区自动配置 Octop token / Octop 连接正常」。
+
+### English
+
+- **Experience distillation now backed by Octop**: the client experiences page reads Octop `memory/candidates` and per-agent `skills` directly; reviewers can promote or reject.
+- **No manual login needed**: when a workspace `.octop-token` exists, the client configures itself and connects to Octop on startup.
+- Startup log prints "auto-configured Octop token" and "Octop connection OK".
+
+---
+
 ## [0.13.0] - 2026-10-24
 
 ### 中文
