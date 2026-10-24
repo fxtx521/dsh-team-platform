@@ -5,6 +5,24 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ---
 
+## [0.23.0] - 2026-10-24
+
+### 中文
+
+**浏览器自动化打通（实测）**
+- 服务端安装 Playwright Chromium（`/api/browser/install`），状态 `browsers_ok=true`
+- 客户端能力页显示浏览器状态，并可一键触发安装
+- **实测**：让助理用浏览器打开 https://example.com → 回复页面标题「Example Domain」
+
+### English
+
+**Browser automation verified**
+- Installed Playwright Chromium server-side (`/api/browser/install`), `browsers_ok=true`
+- The capabilities page shows browser status and triggers installation
+- **Verified**: asked the agent to open https://example.com in the browser; it reported the title "Example Domain"
+
+---
+
 ## [0.22.0] - 2026-10-24
 
 ### 中文
