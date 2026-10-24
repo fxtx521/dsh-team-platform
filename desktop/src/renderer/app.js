@@ -292,6 +292,9 @@ async function refresh() {
   renderConn(); renderHome(); renderProjects();
 }
 function fillSettings() {
+  const m = (SNAP && SNAP.mcp) || {};
+  const mu = $('#mcpUrl'); if (mu) mu.textContent = m.url || '（未启用）';
+  const mo = $('#mcpOn'); if (mo) mo.checked = m.enabled !== false;
   const c = SNAP?.cfg || {};
   $('#cfgServer').value = c.serverUrl || '';
   $('#cfgKey').value = c.apiKey || '';
@@ -574,6 +577,8 @@ function bind() {
     await api.saveConfig({ allowCommand: $('#cfgAllowCmd').checked, cmdWhitelist: $('#cfgWhitelist').value.split(',').map((s) => s.trim()).filter(Boolean) });
     await refresh(); toast('安全设置已保存');
   };
+  const mo = $('#mcpOn');
+  if (mo) mo.onchange = async () => { const r = await api.mcpToggle(mo.checked); toast(r && r.ok ? (mo.checked ? 'MCP 已启用' : 'MCP 已关闭') : '操作失败'); await refresh(); };
   $('#btnSyncSkills').onclick = async () => { await api.heartbeat(); await loadSkills(); toast('技能已同步'); };
   $('#btnRunLocal').onclick = () => toast('本地执行：下一步接执行器');
   api.onTool && api.onTool((d) => {

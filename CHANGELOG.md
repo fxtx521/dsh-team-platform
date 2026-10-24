@@ -1,177 +1,112 @@
 # 更新日志 / Changelog
 
-所有重要变更都记在这里。格式参考 Keep a Changelog，版本号遵循语义化（0.x 阶段功能可能调整）。
+所有重要变更记录在此。格式参考 Keep a Changelog；版本遵循语义化。每个版本含**中文 + English** 说明。
+All notable changes are documented here. Format follows Keep a Changelog; versions follow SemVer. Each release has **Chinese + English** notes.
+
+---
+
+## [0.11.0] - 2026-10-24
+
+### 中文
+
+**新增**
+- **客户端内置 MCP 服务**：客户端启动后本地提供 `http://127.0.0.1:18991/mcp`（可配置端口），暴露 4 个工具：列目录 / 读文件 / 写文件 / 执行命令；只允许「已登记项目目录」，命令需白名单且默认关闭外部绑定。
+- **Octop 直连本地客户端**：Octop 后台把客户端 MCP 注册为「自定义 MCP 服务」后，云端助理可**直接**读写员工本地文件，**不经过自研后台**（实测 6.5 秒列出本地目录 3 个文件）。
+- 设置页新增「本地 MCP 服务」区块：显示地址、开关。
+
+**修复**
+- 专家切换后对话报错/无回复（会话线程按「会话 + 助理」维度创建，专家助理自动补默认模型）。
+
+**说明**
+- 架构调整：自研后台不再作为必经中间层；仅保留可选看板能力。
+- 不给 Octop 打补丁；只用其公开的 HTTP / WebSocket / MCP 接口，锁版本 1.0.2。
+
+### English
+
+**Added**
+- **Built-in MCP server in the desktop client**: exposes `http://127.0.0.1:18991/mcp` with 4 tools (list dir / read file / write file / run command). Access is limited to registered project folders; commands are whitelisted and external binding is off by default.
+- **Octop connects to the local client directly**: once the client MCP is registered as a Custom MCP server in Octop, cloud agents can read/write employee-local files **without our own backend** (verified: listing a local folder took 6.5s).
+- Settings page shows the local MCP endpoint and an on/off switch.
+
+**Fixed**
+- Expert switch caused empty replies (threads are now created per session+agent; expert agents get a default model automatically).
+
+**Notes**
+- Architecture change: our backend is no longer a mandatory middle layer; only an optional dashboard is kept.
+- No patches to Octop source; only public HTTP/WebSocket/MCP APIs, pinned to 1.0.2.
 
 ---
 
 ## [0.10.1] - 2026-10-24
 
-### 修复
-- **切换专家后对话报错/无回复**：根因是会话线程按默认助理创建、却用专家助理去发消息，Octop 直接抛异常。改为「会话 + 助理」维度创建线程（thread_for_session 带 agent_id）。
-- **专家助理默认没有模型**：新建/命中缓存的专家助理都会自动补 `default_model`（mimo-v2.6-flash），否则对话返回空。
-- 助理名重复时（已存在同名助理），改为先按专家名查找已有助理，避免 `agent name already in use`。
+### 中文
+- 修复：切换专家后对话报错/无回复（线程错配 + 专家助理无默认模型）。
+- 修复：同名助理已存在时创建失败，改为先按专家名查找。
 
-### 验证
-- 多专家协作编排：12.8 秒正常回复，人设正确（「我是 OCTOP 多专家协作编排师…」）。
-
----
+### English
+- Fixed: empty replies after switching experts (thread mismatch + expert agents had no default model).
+- Fixed: agent creation failed when an agent with the same name already existed; now looked up first.
 
 ## [0.10.0] - 2026-10-24
 
-### 新增
-- **客户端专家库**：对话页增加「专家」下拉，云端 22 个专家（通用助手/业务流程专家/AI 编程导师…）可切换；选不同专家即使用不同的助理实例（首次使用自动创建并缓存映射）。
-- **GET /v1/experts**：把 Octop 专家库以平台接口形式暴露给客户端。
+### 中文
+- 新增：客户端专家库（22 个专家可切换，每个专家一个独立助理实例）。
+- 修复：经验提炼只针对「有本地执行步骤」的任务，纯聊天不再入库；清理了被污染的技能与经验。
 
-### 修复
-- **经验沉淀质量**：只提炼「有本地执行步骤」的任务（读过文件/跑过命令/写过文件），纯聊天不再入库。
-- **技能库污染**：清理了由聊天标题/测试任务生成的垃圾技能与经验；云端技能库回到 7 条干净内容。
-
----
+### English
+- Added: expert library in the client (22 experts, each mapped to its own agent).
+- Fixed: experience distillation now requires real local tool steps; chat-only tasks are skipped; polluted skills/experiences cleaned.
 
 ## [0.9.0] - 2026-10-24
 
-### 新增
-- **网页「账号管理」页**：`/users` —— 账号列表（姓名/角色/部门/绑定设备数/状态）、新建账号、改角色、重置密码、禁用/启用。
-- **PATCH /v1/users/{id}**：改角色、改名、改部门、重置密码、禁用启用。
-- 账号列表只展示真实账号（有密码的），自动排除历史终端占位记录。
-- admin 账号补写密码哈希，可同时用于网页登录与客户端登录。
+### 中文
+- 新增：网页「账号管理」页（列表 / 新建 / 改角色 / 重置密码 / 禁用）。
+- 说明：账号体系为平台自建（PBKDF2 加盐），不依赖 Octop/飞书/AD。
 
-### 说明
-- 账号体系是**平台自建**的 users 表（PBKDF2 加盐哈希），不依赖 Octop / 飞书 / AD 的账号。
-- 以后可扩展：企业微信/飞书扫码、LDAP/AD 对接（需另外开发）。
-
----
+### English
+- Added: account management page (list / create / change role / reset password / disable).
+- Note: accounts are self-hosted (PBKDF2 salted), independent of Octop/Feishu/AD.
 
 ## [0.8.0] - 2026-10-24
 
-### 新增
-- **统一账号体系**：客户端与网页共用同一套账号密码（users 表 + PBKDF2 密码哈希）。
-- **账号登录接口**：POST /v1/auth/login（返回 Bearer token）、GET /v1/auth/me（身份+权限）、POST /v1/auth/bind-device（登录后自动把本机注册为该员工终端，返回 Key）。
-- **账号管理接口**：GET /v1/users、POST /v1/users（管理员建号、设角色、部门）。
-- **网页端登录支持统一账号**：管理员/主管可用账号密码登录后台；员工账号登录被拒（跳回登录页）。
-- **客户端登录页**：首次启动弹登录框，登录后自动绑定设备、侧边栏显示「姓名 · 角色」。
+### 中文
+- 新增：统一账号（客户端与网页同一套账号密码）、登录接口、设备自动绑定、账号管理接口。
 
-### 验证
-- admin（旧密码）登录 303 进后台；主管 lisi 账号登录 303 进后台；员工 zhangsan 被拒（302 -> /login?err=1）。
-- 客户端绑定设备成功并返回新终端 Key。
-
----
+### English
+- Added: unified accounts shared by client and web, login API, automatic device binding, user management APIs.
 
 ## [0.7.0] - 2026-10-24
 
-### 新增
-- **身份与权限（云端唯一事实源）**：新增 users 表（员工/主管/管理员三档角色），终端与员工绑定（terminals.user_id）。
-- **GET /v1/me**：客户端用终端 Key 换取身份与权限列表。
-- **审核接口按角色校验**：经验通过/驳回/批量审核改为要求 experience.approve 权限（管理员 Cookie 或主管 Key），普通员工返回 403。
-- **客户端显示身份**：侧边栏显示「姓名 · 角色」；经验页仅对主管/管理员显示「通过/驳回」按钮。
+### 中文
+- 新增：身份与权限（员工/主管/管理员），审核接口按角色校验，客户端按角色显示审核按钮。
 
-### 验证
-- 主管（reviewer）审核 → 成功；普通员工（employee）审核 → 403 no permission（实测）。
+### English
+- Added: identity and roles (employee / reviewer / admin), role-checked approval APIs, role-aware UI.
 
----
+## [0.6.x] - 2026-10-24
 
-## [0.6.1] - 2026-10-24
+### 中文
+- 新增：执行过程可视化、项目简报、文件预览、我的任务页、经验页、web 周报。
+- 修复：会话串味（每会话独立线程）、快速新建会话合并、项目只能加一个。
 
-### 新增
-- **客户端「经验」页**：查看团队沉淀的经验候选（标题、摘要、状态：待审/已入库/已驳回）+ 统计（经验总数、待审、技能数）。
-- 员工端汇总接口增加最近经验列表（终端视角）。
-
-### 修复
-- 清理历史噪音数据：飞书桥前缀标题、测试类经验/技能、重复经验（去重后保留最新一条）。
-
----
-
-## [0.6.0] - 2026-10-24
-
-### 新增（客户端）
-- **执行过程可视化**：对话中实时显示本地工具调用（📂 浏览目录 / 📄 读取文件 / ✍️ 写入文件 / ⌨️ 执行命令），带耗时与成功/失败标记。
-- **执行细节弹窗**：点击过程条目可查看文件内容或命令输出（stdout/stderr）。
-- **项目简报（项目记忆）**：每个项目可编辑 `PROJECT.md`（客户背景、口径、禁做事项、常用模板），对话时自动注入给助理。
-- **本地文件预览**：项目浏览、对话过程均可直接预览文件内容，支持「在文件夹中显示」。
-- **「我的任务」页**：展示今日/累计任务、技能与经验数量、本地工具使用统计（数据来自平台 `/v1/my/summary`）。
-- **对话附件**：可从当前项目附带文本文件随提问发送（实测：读取文件内容后作答）。
-- **回复保存到项目**：AI 回复一键保存为 md 到项目 `产出/` 目录。
-
-### 新增（服务端）
-- `GET /v1/my/summary`：员工端查看自己的任务、工具使用、技能与经验统计。
-- `POST /v1/chat` 支持 `files`（本地文件内容）与 `session_id`（会话隔离）。
-- `POST /v1/skills/dedupe`：技能去重（同名合并保留最新）。
-- `POST /v1/experience/batch-approve`：经验批量审核（低风险自动入库，敏感词留人工）。
-- **自动沉淀**：后台每 30 分钟自动提炼经验候选（带质量过滤：测试类/噪音标题/过短内容不入库）。
-- **技能召回注入**：对话时按问题关键词从技能库召回最多 3 条经验注入提示词（实测命中「客户核查」「台账整理」SOP）。
-
-### 修复
-- **会话串味**：每个客户端会话改为对应 Octop 独立线程（走 HTTP `/api/agents/{id}/threads`），实测 A 记「苹果」、B 记「香蕉」，回问 A 答「苹果」。
-- **快速新建会话合并**：会话 ID 改用 UUID，并锁定「发起会话」写回回复，避免切走后写错会话。
-- **项目只能添加一个**：Electron 不支持 `window.prompt`，改为应用内弹窗输入项目名。
-- **客户端显示未连接**：根因是服务端事件循环被阻塞 + SQLite 写锁（详见 0.5.x 修复）。
-
-### 已知问题
-- 小米 MiMo flash 偶尔会把「记忆检索结果」当答案输出（模型行为，后续在提示词中约束）。
-- 自动提炼的经验偏「机械摘要」，需要人工审核后才建议作为标准 SOP。
-
----
+### English
+- Added: execution timeline, project brief (PROJECT.md), file preview, my-tasks page, experiences page, weekly report.
+- Fixed: session cross-talk (per-session threads), fast session merge, only-one-project bug.
 
 ## [0.5.0] - 2026-10-23
 
-### 新增
-- **本地 MCP 网关**：`POST /v1/local/poll`、`POST /v1/local/result`、`POST /mcp`（streamable-HTTP），工具：`local_list_dir` / `local_read_file` / `local_write_file` / `local_run_cmd`。
-- **Octop 注册自定义 MCP**：`PUT /api/connectors/custom-mcp` 指向我们的 MCP 网关，探测返回 4 个工具。
-- **客户端本地执行器**：长轮询领活 → 在本地白名单目录内执行 → 回传结果。
-- **云端 AI 操作本地文件**：实测让 AI 读取本地文件并写入 `摘要.md`（102 字节），全链路 40.7 秒。
-- 客户端「对话」页：多会话、会话改名、会话隔离、Enter 发送、耗时显示。
+### 中文
+- 新增：本地 MCP 网关、客户端长轮询执行器、云端 AI 读写本地文件。
+- 修复：MCP 握手卡住对话、服务端事件循环阻塞、SQLite 写锁、客户端 fetch 挂起。
 
-### 修复
-- **MCP 握手卡住对话**：补齐 streamable-HTTP 协议（`Mcp-Session-Id` 会话头 + SSE 事件流 + GET 保活 + DELETE 关闭），修复绑定 MCP 后对话挂起。
-- **服务端整体卡死**：`subprocess` 阻塞调用移入线程池（`asyncio.to_thread`），健康检查从 10 秒超时恢复到 3 毫秒。
-- **SQLite `database is locked`**：启用 WAL + busy_timeout，任务写入改为幂等 upsert，所有连接强制关闭，心跳写库容错。
-- **客户端请求挂起**：Node `fetch` 在本机直连会卡住，改用 `http`/`https` 模块。
-- **助理默认模型不同步**：只改全局默认模型不够，需单独 `PATCH /api/agents/{id}` 设置 `default_model`。
+### English
+- Added: local MCP gateway, client long-poll executor, cloud AI reading/writing local files.
+- Fixed: MCP handshake hang, blocked event loop, SQLite write locks, client fetch hang.
 
----
+## [0.1.0 - 0.4.0] - 2026-10-22
 
-## [0.4.0] - 2026-10-23
+### 中文
+- P0 平台（登录/终端/任务/看板/详情）、客户端上报插件、Octop 独立部署与品牌定制、平台与 Octop 打通、业务模板（客户核查/台账/标书）、技能库与下发、产物回流、经验提炼。
 
-### 新增
-- **桌面客户端 v0.1**（Electron，macOS + Windows）：概览、我的项目、任务、技能库、终端、设置；托盘常驻；项目白名单 + 命令白名单。
-- 客户端「执行任务」弹窗：选项目 → 填参数 → 勾本地文件 → 执行 → 保存到项目 / 上传到看板。
-- 客户端技能同步：云端 SOP 自动同步到 `~/.dsh/platform/skills` 与 `~/.dsh/skills`（DSH 技能目录）。
-- 平台支持**终端 Key 直接派任务**（`/v1/octop/run` 接受 `X-API-Key`），并支持 `files` 注入本地文件内容。
-- 产物回流：`POST /v1/tasks/{id}/artifacts/upload(-b64)` + `GET /v1/artifacts/{id}/download`，看板可下载。
-- 技能下发统计：`GET /v1/skills/stats`（每条技能下发到几台终端、最近时间）。
-
----
-
-## [0.3.0] - 2026-10-22
-
-### 新增
-- 业务任务模板：客户资料核查 / 台账整理 / 标书初稿，支持 `template_id` + `params`。
-- **SOP 自动注入**：派任务时把技能库内容拼进提示词（步骤记 `skill.inject`）。
-- **联网检索**：`websearch.py`（360 搜索主源 + DuckDuckGo/Bing 兜底 + 1 小时缓存），检索结果注入提示词。
-- **经验提炼 V1**：`POST /v1/experience/distill`、`GET /v1/experience`、`POST /v1/experience/{id}/approve|reject`。
-- **经验审核页 / 技能库页 / 周报页**：`/experience`、`/skills`、`/report`。
-- **看板补充**：Octop 任务卡片、技能与经验统计、最近 Octop 任务列表。
-
-### 修复
-- Octop 模型配置必须用 `id` 字段（不是 `name`），否则报 `no_models_configured`。
-- 接本地 Ollama 需用 OpenAI 兼容模式（`kind=openai` + `/v1`），原生 `ollama` 模式探测 404。
-- 提示词过长导致模型输出空白：精简检索结果（去长链接、限 2200 字）。
-
----
-
-## [0.2.0] - 2026-10-22
-
-### 新增
-- **接入小米 MiMo**：`mimo-v2.6-flash`（`https://api.xiaomimimo.com/v1`），修正预设里过时的 `mimo-v2.5`。
-- **平台 ↔ Octop 打通**：`POST /v1/octop/run`（派任务给 Octop 助理，结果回写平台任务与步骤）。
-- 独立部署自己的 Octop 实例（`pip install octop`，端口 18090，systemd 自启）+ 品牌定制（「砺 · 团队助理」）。
-
----
-
-## [0.1.0] - 2026-10-22
-
-### 新增
-- **P0 平台**：登录（HMAC Cookie）、终端管理、任务/步骤/产物上报、看板、任务详情。
-- **客户端上报插件** `@local/l3b-asset-reporter`：监听 DSH 会话事件，上报任务/步骤/产物元数据，断网本地排队重试。
-- 公网访问：frp 隧道 + 自愈守护（WSL 保活、frpc 自启、5 分钟唤醒任务）。
-- 仓库初始化：中英双语 README、MIT 许可、架构/对接/路线图文档。
+### English
+- P0 platform (login / terminals / tasks / dashboard / detail), client reporter plugin, self-hosted Octop with branding, platform-Octop integration, business templates, skills library and distribution, artifact round-trip, experience distillation.

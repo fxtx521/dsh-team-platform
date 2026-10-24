@@ -45,6 +45,8 @@ const DEFAULT_CFG = {
   projects: [],          // [{id,name,dir,createdAt}]
   cmdWhitelist: ['python3', 'node', 'git', 'ls', 'cat', 'echo', 'head', 'wc'],
   allowCommand: true,
+  mcpEnabled: true,
+  mcpBind: '127.0.0.1',   // 局域网直连可改 0.0.0.0
   autoLaunch: false,
   theme: 'light',
 };
@@ -152,6 +154,8 @@ function snapshot() {
     skills: (() => { try { return fs.readdirSync(path.join(app.getPath('userData'), 'skills')); } catch { return []; } })(),
     platform: process.platform,
     version: app.getVersion(),
+    mcp: { enabled: cfg.mcpEnabled !== false, host: cfg.mcpBind || '127.0.0.1', port: MCP_PORT,
+           url: 'http://' + (cfg.mcpBind || '127.0.0.1') + ':' + MCP_PORT + '/mcp' },
   };
 }
 
@@ -340,6 +344,15 @@ ipcMain.handle('cloud:mySummary', async () => {
   return await api('GET', '/v1/my/summary');
 });
 
+ipcMain.handle('mcp:toggle', async (_e, on) => {
+  const cfg = readCfg();
+  writeCfg({ ...cfg, mcpEnabled: !!on });
+  if (on && !mcpServer) startMcpServer();
+  if (!on && mcpServer) { try { mcpServer.close(); } catch {} mcpServer = null; }
+  broadcast();
+  return { ok: true, enabled: !!on };
+});
+
 ipcMain.handle('cloud:experts', async () => {
   return await api('GET', '/v1/experts');
 });
@@ -379,6 +392,106 @@ ipcMain.handle('cloud:expAction', async (_e, { id, action }) => {
   if (r.ok) log('经验' + (action === 'approve' ? '通过' : '驳回') + ': ' + id.slice(0, 8));
   return r;
 });
+
+
+// ── 客户端内置 MCP 服务（供 Octop 直连，替代自研后台桥）──────
+const MCP_PORT = Number(process.env.DSH_MCP_PORT || 18991);
+let mcpServer = null;
+
+function mcpTools() {
+  return [
+    { name: "local_list_dir", description: "列出本地项目目录下的文件（仅限已登记目录）",
+      inputSchema: { type: "object", properties: { dir: { type: "string" } }, required: ["dir"] } },
+    { name: "local_read_file", description: "读取本地文件（仅限已登记目录，最大 200KB）",
+      inputSchema: { type: "object", properties: { file: { type: "string" } }, required: ["file"] } },
+    { name: "local_write_file", description: "写入本地文件（仅限已登记目录）",
+      inputSchema: { type: "object", properties: { file: { type: "string" }, content: { type: "string" } }, required: ["file", "content"] } },
+    { name: "local_run_cmd", description: "在本地执行命令（需开启命令白名单）",
+      inputSchema: { type: "object", properties: { cmd: { type: "string" }, cwd: { type: "string" } }, required: ["cmd"] } },
+  ];
+}
+
+function mcpExec(tool, args) {
+  const cfg = readCfg();
+  if (tool === "local_list_dir") {
+    const dir = path.resolve(String(args.dir || ""));
+    if (!isInside(cfgRoots(), dir)) throw new Error("目录不在白名单");
+    return fs.readdirSync(dir).slice(0, 200).map((n) => {
+      const full = path.join(dir, n);
+      try { const s = fs.statSync(full); return (s.isDirectory() ? "[DIR] " : "") + n + (s.isDirectory() ? "" : "  " + s.size + "B"); }
+      catch { return n; }
+    }).join("\n");
+  }
+  if (tool === "local_read_file") {
+    const f = path.resolve(String(args.file || ""));
+    if (!isInside(cfgRoots(), f)) throw new Error("文件不在白名单");
+    return fs.readFileSync(f, "utf8").slice(0, 200000);
+  }
+  if (tool === "local_write_file") {
+    const f = path.resolve(String(args.file || ""));
+    if (!isInside(cfgRoots(), f)) throw new Error("文件不在白名单");
+    fs.mkdirSync(path.dirname(f), { recursive: true });
+    fs.writeFileSync(f, String(args.content || ""), "utf8");
+    log("MCP 写入: " + f);
+    return "已写入 " + f;
+  }
+  if (tool === "local_run_cmd") {
+    if (!cfg.allowCommand) throw new Error("命令执行未开启");
+    const bin = String(args.cmd || "").trim().split(/\s+/)[0];
+    if (!(cfg.cmdWhitelist || []).includes(bin)) throw new Error("不在命令白名单: " + bin);
+    const wd = args.cwd && isInside(cfgRoots(), path.resolve(args.cwd)) ? path.resolve(args.cwd) : cfg.projectRoot;
+    const shell = process.platform === "win32" ? "cmd.exe" : "/bin/sh";
+    const shArgs = process.platform === "win32" ? ["/c", String(args.cmd)] : ["-c", String(args.cmd)];
+    const out = requireChild(shell, shArgs, wd);
+    log("MCP 执行命令: " + args.cmd);
+    return out;
+  }
+  throw new Error("未知工具 " + tool);
+}
+
+function requireChild(shell, args, cwd) {
+  const { execFileSync } = require("child_process");
+  return String(execFileSync(shell, args, { cwd, timeout: 60000, maxBuffer: 4 * 1024 * 1024 })).slice(0, 20000);
+}
+
+function startMcpServer() {
+  const cfg = readCfg();
+  if (cfg.mcpEnabled === false) return;
+  const host = cfg.mcpBind || "127.0.0.1";
+  mcpServer = http.createServer((req, res) => {
+    if (req.method !== "POST") { res.writeHead(405); return res.end(); }
+    let body = "";
+    req.on("data", (c) => { body += c; });
+    req.on("end", () => {
+      let msg = {};
+      try { msg = JSON.parse(body || "{}"); } catch {}
+      const method = msg.method || "";
+      const id = msg.id;
+      const send = (obj) => {
+        const payload = JSON.stringify(obj);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(payload);
+      };
+      const ok = (result) => send({ jsonrpc: "2.0", id, result });
+      if (method === "initialize") return ok({ protocolVersion: "2024-11-05", capabilities: { tools: {} }, serverInfo: { name: "lishi-workbench-local", version: app.getVersion() } });
+      if (method === "notifications/initialized") { res.writeHead(202); return res.end(); }
+      if (method === "ping") return ok({});
+      if (method === "tools/list") return ok({ tools: mcpTools() });
+      if (method === "tools/call") {
+        const p = msg.params || {};
+        try {
+          const out = mcpExec(p.name, p.arguments || {});
+          return ok({ content: [{ type: "text", text: String(out).slice(0, 20000) }], isError: false });
+        } catch (e) {
+          return ok({ content: [{ type: "text", text: "错误: " + e.message }], isError: true });
+        }
+      }
+      send({ jsonrpc: "2.0", id, error: { code: -32601, message: "method not found" } });
+    });
+  });
+  mcpServer.on("error", (e) => log("MCP 服务启动失败: " + e.message));
+  mcpServer.listen(MCP_PORT, host, () => log("MCP 服务已启动: http://" + host + ":" + MCP_PORT + "/mcp"));
+}
 
 ipcMain.handle('cloud:chat', async (_e, { message, sessionId, files, projectId, expertId }) => {
   const t = newTurn(message);
@@ -475,6 +588,7 @@ app.whenReady().then(() => {
   setTimeout(heartbeat, 1500);
   setInterval(heartbeat, 60 * 1000);
   setTimeout(startPoller, 2500);
+  try { startMcpServer(); } catch (e) { log('MCP 启动异常: ' + e.message); }
   app.on('activate', () => { if (!win) createWindow(); else win.show(); });
 });
 app.on('before-quit', () => { app.isQuitting = true; });

@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('wb', {
   heartbeat: () => ipcRenderer.invoke('cloud:heartbeat'),
   chat: (m, sessionId, files, projectId, expertId) => ipcRenderer.invoke('cloud:chat', { message: m, sessionId, files, projectId, expertId }),
   experts: () => ipcRenderer.invoke('cloud:experts'),
+  mcpToggle: (on) => ipcRenderer.invoke('mcp:toggle', on),
   runTask: (p) => ipcRenderer.invoke('cloud:runTask', p),
   uploadArtifact: (p) => ipcRenderer.invoke('cloud:uploadArtifact', p),
   readBrief: (p) => ipcRenderer.invoke('project:readBrief', p),
