@@ -37,6 +37,14 @@ const api = window.wb || {
   runCmd: async () => ({ ok: true, output: '（预览模式，未执行真实命令）' }),
   chat: async (m) => ({ ok: true, data: { reply: '（预览模式）收到：' + m, elapsed_ms: 3200 } }),
   login: async () => ({ ok: true, user: { display_name: '演示员工' } }),
+  octopExperts: async () => ({ ok: true, items: [
+    { id: 'general-assistant', name: '小通 · 通用助手', desc: '通用任务' },
+    { id: 'business-operations', name: '业务流程专家', desc: 'SOP 与流程优化' },
+    { id: 'ai-coding-coach', name: 'AI 编程实战导师', desc: '代码与工程' },
+    { id: 'office-automation', name: '小办 · 办公自动化', desc: '文档表格批处理' },
+    { id: 'design', name: '设计专家', desc: '设计评审与 UX' },
+    { id: 'stock-assistant', name: '老钱 · 证券观察员', desc: '行情解读' },
+  ] }),
   octopSkills: async () => ({ ok: true, items: [
     { name: '备忘录', desc: '在 macOS 上创建、搜索和编辑 Apple 备忘录' },
     { name: '提醒事项', desc: '管理提醒事项' },
@@ -145,6 +153,17 @@ function bindPreviewModal() {
   $('#pvClose').onclick = close;
   $('#pvOk').onclick = close;
   $('#pvReveal').onclick = () => { const f = $('#pvBody').dataset.file; if (f) api.reveal(f); };
+  const pvA = $('#pvAttach');
+  if (pvA) pvA.onclick = () => {
+    const f = $('#pvBody').dataset.file;
+    if (!f) { toast('这个内容没有本地文件'); return; }
+    const name = f.split(/[\\/]/).pop();
+    if (!attachments.some((x) => x.path === f)) attachments.push({ name, path: f });
+    renderAttach();
+    $('#previewModal').classList.remove('show');
+    go('chat');
+    toast('已附加到对话：' + name);
+  };
 }
 
 function bindBriefModal() {
@@ -207,6 +226,7 @@ function go(view) {
   if (view === 'tasks') loadTasks();
   if (view === 'experiences') loadExperiences();
   if (view === 'capabilities') loadCapabilities();
+  if (view === 'home') renderHomeExperts();
   if (view === 'knowledge') { loadKnowledge(); loadKbDocs(); }
   if (view === 'expertspage') loadExpertsPage();
   if (view === 'skills') loadSkills();
@@ -248,6 +268,23 @@ function renderHome() {
     el.onclick = function () { curSession = el.dataset.openSession; saveSessions(); renderSessions(); renderChat(); go("chat"); };
   });
 }
+async function renderHomeExperts() {
+  const box = $('#homeExperts');
+  if (!box || !api.octopExperts) return;
+  const r = await api.octopExperts();
+  const items = ((r && r.items) || []).slice(0, 6);
+  box.innerHTML = items.map(function (e) {
+    return '<div class="expert-card"><b>' + esc(e.name) + '</b><button class="btn ghost" data-home-expert="' + esc(e.id) + '">开始对话</button></div>';
+  }).join('') || '<div class="sub">没有专家</div>';
+  $$('[data-home-expert]').forEach(function (b) {
+    b.onclick = function () {
+      const sel = $('#chatExpert');
+      if (sel) { sel.value = b.dataset.homeExpert; pickedSkills = []; renderSkillCount(); }
+      go('chat');
+    };
+  });
+}
+
 function renderProjects() {
   const cfg = SNAP?.cfg || {};
   $('#projectGrid').innerHTML = (cfg.projects || []).map((p) => `<div class="project" data-id="${p.id}"><b>${esc(p.name)}</b><div class="path">${esc(p.dir)}</div><div class="ops"><button class="btn ghost" data-open="${p.id}">浏览文件</button><button class="btn ghost" data-brief="${p.id}">简报</button><button class="btn ghost" data-del="${p.id}">移除</button></div></div>`).join('') || '<div class="sub">还没有项目，点右上角「添加项目」把文件夹登记进来</div>';
@@ -584,20 +621,32 @@ async function loadExpertsPage() {
 }
 
 async function loadSkills() {
+  const box = $("#skillList");
+  if (!box) return;
+  let items = [];
   if (api.octopSkills) {
-    const r = await api.octopSkills();
-    const items = (r && r.items) || [];
-    curSkills = items;
-    $('#skillList').innerHTML = items.map(function (s) {
-      return '<div class="item"><div class="t"><b>' + esc(s.name) + '</b><span>' + esc(s.desc || '') + '</span></div><span class="badge ok">已同步</span></div>';
-    }).join('') || '<div class="sub">助理还没有技能</div>';
-    return;
+    const r = await api.octopSkills({ expertId: ($("#chatExpert") || {}).value || "" });
+    items = (r && r.items) || [];
+  } else if (api.skills) {
+    const r = await api.skills();
+    items = (r && r.data && r.data.items) || [];
   }
-  const r = await api.skills();
-  curSkills = (r && r.data && r.data.items) || [];
-  $('#skillList').innerHTML = curSkills.map(function (s) {
-    return '<div class="item"><div class="t"><b>' + esc(s.name) + '</b><span>v' + (s.version || 1) + '</span></div><span class="badge ok">已同步</span></div>';
-  }).join('') || '<div class="sub">还没有技能</div>';
+  curSkills = items;
+  const hint = $("#skillHint");
+  if (hint) hint.textContent = "共 " + items.length + " 个技能（跟随当前助理）";
+  box.innerHTML = items.map(function (s) {
+    return '<div class="expert-card"><b>' + esc(s.name) + '</b><span>' + esc(s.desc || "") + '</span>' +
+      '<button class="btn ghost" data-use-skill="' + esc(s.slug || s.name) + '">用于对话</button></div>';
+  }).join("") || '<div class="sub">这个助理还没有技能</div>';
+  $$("[data-use-skill]").forEach(function (b) {
+    b.onclick = function () {
+      const slug = b.dataset.useSkill;
+      if (!pickedSkills.includes(slug)) pickedSkills.push(slug);
+      renderSkillCount();
+      go("chat");
+      toast("已启用技能，发送时带上");
+    };
+  });
 }
 async function refresh() {
   SNAP = await api.snapshot();

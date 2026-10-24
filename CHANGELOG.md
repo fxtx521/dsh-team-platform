@@ -5,6 +5,24 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ---
 
+## [0.31.0] - 2026-10-24
+
+### 中文
+
+- 概览页新增「常用专家」：6 个专家卡片，点「开始对话」直接用
+- 技能库改为卡片网格，每个技能带「用于对话」按钮（点了自动带上该技能）
+- 文件预览弹窗新增「＋ 附加到对话」：项目里的文件一键带进对话当上下文
+- 技能页/首页数据均跟随当前助理
+
+### English
+
+- Overview gained a Frequently used experts row: six cards with Start chat
+- The skills page is now a card grid; each skill has a Use in chat button
+- File preview modal gained Attach to chat so a project file becomes chat context in one click
+- Skills and home data follow the currently selected agent
+
+---
+
 ## [0.30.0] - 2026-10-24
 
 ### 中文

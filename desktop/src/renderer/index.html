@@ -101,6 +101,10 @@
           <div class="stat"><b id="stProjects">-</b><span>项目</span></div>
         </div>
       </div>
+      <div class="card">
+        <div class="card-h"><div><h3>常用专家</h3><p class="sub">点一下直接用这个专家开始干活</p></div><button class="link" data-view="expertspage">全部</button></div>
+        <div id="homeExperts" class="grid2"></div>
+      </div>
       <div class="grid2">
         <div class="card">
           <div class="card-h"><h3>最近会话</h3><button class="link" data-view="tasks">执行记录</button></div>
@@ -178,8 +182,8 @@
 
     <section class="view" id="view-skills">
       <div class="card">
-        <div class="card-h"><div><h3>技能库</h3><p class="sub">云端下发的 SOP，本地已同步的可以直接用。</p></div><button class="btn ghost" id="btnSyncSkills">同步技能</button></div>
-        <div id="skillList" class="list"></div>
+        <div class="card-h"><div><h3>技能库</h3><p class="sub" id="skillHint">跟随当前助理的技能</p></div><button class="btn ghost" id="btnSyncSkills">刷新</button></div>
+        <div id="skillList" class="grid2" style="padding:4px 0"></div>
       </div>
     </section>
 
@@ -257,7 +261,7 @@
   <div class="modal" style="width:720px">
     <div class="modal-h"><h3 id="pvTitle">文件预览</h3><button class="modal-x" id="pvClose">✕</button></div>
     <div class="modal-b"><pre id="pvBody" style="white-space:pre-wrap;font-size:12.5px;line-height:1.6;max-height:60vh;overflow:auto;background:#fbfcfe;border:1px solid #e9ecf2;border-radius:10px;padding:12px">（空）</pre></div>
-    <div class="modal-f"><button class="btn ghost" id="pvReveal">在文件夹中显示</button><button class="btn primary" id="pvOk">关闭</button></div>
+    <div class="modal-f"><button class="btn ghost" id="pvReveal">在文件夹中显示</button><button class="btn ghost" id="pvAttach">＋ 附加到对话</button><button class="btn primary" id="pvOk">关闭</button></div>
   </div>
 </div>
 
