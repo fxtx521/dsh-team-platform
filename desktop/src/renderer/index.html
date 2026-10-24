@@ -96,14 +96,14 @@
           </div>
         </div>
         <div class="hero-stats">
-          <div class="stat"><b id="stToday">-</b><span>今日任务</span></div>
-          <div class="stat"><b id="stSkills">-</b><span>可用技能</span></div>
+          <div class="stat"><b id="stToday">-</b><span>今日会话</span></div>
+          <div class="stat"><b id="stSkills">-</b><span>工具执行</span></div>
           <div class="stat"><b id="stProjects">-</b><span>项目</span></div>
         </div>
       </div>
       <div class="grid2">
         <div class="card">
-          <div class="card-h"><h3>最近任务</h3><button class="link" data-view="tasks">全部</button></div>
+          <div class="card-h"><h3>最近会话</h3><button class="link" data-view="tasks">执行记录</button></div>
           <div id="homeTasks" class="list"></div>
         </div>
         <div class="card">
@@ -129,8 +129,12 @@
 
     <section class="view" id="view-tasks">
       <div class="card">
-        <div class="card-h"><h3>任务</h3><span class="sub" id="taskHint">从云端拉取</span></div>
+        <div class="card-h"><h3>执行记录</h3><span class="sub" id="taskHint">本机记录</span></div>
         <div id="taskList" class="list"></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><div><h3>产物</h3><p class="sub">对话里「保存到项目」的文件，存在项目的 产出/ 目录</p></div><button class="btn ghost" id="btnArtifactRefresh">刷新</button></div>
+        <div id="artifactList" class="list"><div class="sub">加载中…</div></div>
       </div>
       <div class="card" id="taskDetailCard" style="display:none">
         <div class="card-h"><h3 id="tdTitle">任务详情</h3><button class="btn ghost" id="btnRunLocal">在本地执行</button></div>

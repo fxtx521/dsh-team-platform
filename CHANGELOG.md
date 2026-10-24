@@ -5,6 +5,26 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ---
 
+## [0.30.0] - 2026-10-24
+
+### 中文
+
+**工作台功能补齐（第二阶段）**
+- 「任务」页改为「**执行记录**」：展示本机会话、消息数、工具执行次数，点开看每一步；下方新增「**产物**」列表（项目 产出/ 目录，可预览）
+- 「概览」页改为今日工作台：今日会话 / 工具执行 / 项目数 + 最近会话（点一下继续）+ 运行日志
+- 清理死代码：移除依赖已停用后端的旧任务函数与残留引用（api.tasks / showTask / cleanTitle）
+- 每页均用无头浏览器渲染截图检查布局，再打包发布
+
+### English
+
+**Workbench features (phase 2)**
+- The Task page became **Execution record**: local sessions, message counts, tool-run counts, per-session step detail; plus an **Artifacts** list from the project 产出/ folder with preview
+- The Overview page is now a daily workbench: today sessions / tool runs / projects, recent sessions (click to resume), and run logs
+- Removed dead code that still referenced the retired backend (api.tasks / showTask / cleanTitle)
+- Each page is rendered headlessly and screenshotted before packaging
+
+---
+
 ## [0.29.0] - 2026-10-24
 
 ### 中文

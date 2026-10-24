@@ -87,7 +87,6 @@ let ME = null;  // 当前员工身份与权限
 let curView = 'home';
 let curProject = null;   // {id,name,dir}
 let curRel = '.';
-let curTasks = [];
 let curSkills = [];
 
 let _nameCb = null;
@@ -224,14 +223,29 @@ function renderConn() {
 }
 function renderHome() {
   const st = SNAP?.state || {}; const cfg = SNAP?.cfg || {};
-  $('#stToday').textContent = (st.todayTasks != null) ? st.todayTasks : ((st.pending || 0) + (st.running || 0));
-  $('#stSkills').textContent = (SNAP?.skills || []).length;
-  $('#stProjects').textContent = (cfg.projects || []).length;
-  const box = $('#logBox');
-  box.innerHTML = (st.log || []).map((l) => '<div>' + esc(new Date(l.t).toLocaleTimeString()) + ' · ' + esc(l.line) + '</div>').join('') || '<div>暂无日志</div>';
-  api.tasks().then((r) => {
-    const items = (r && r.data && r.data.items) || [];
-    $('#homeTasks').innerHTML = items.slice(0, 5).map((t) => `<div class="item" onclick="go('tasks')"><div class="t"><b>${esc(t.title)}</b><span>${fmtTime(t.created_at)}</span></div><span class="badge ${t.status === 'done' ? 'ok' : 'run'}">${esc(t.status)}</span></div>`).join('') || '<div class="sub">还没有任务</div>';
+  const today = new Date().toISOString().slice(0, 10);
+  let todayCount = 0, steps = 0;
+  sessions.forEach(function (s) {
+    const msgs = s.msgs || [];
+    steps += msgs.filter(function (m) { return m.role === "sys"; }).length;
+    const t = s.updatedAt || s.createdAt || "";
+    if (t && String(t).slice(0, 10) === today) todayCount += 1;
+  });
+  const e1 = $("#stToday"), e2 = $("#stSkills"), e3 = $("#stProjects");
+  if (e1) e1.textContent = todayCount;
+  if (e2) e2.textContent = steps;
+  if (e3) e3.textContent = (cfg.projects || []).length;
+  const box = $("#logBox");
+  if (box) box.innerHTML = (st.log || []).map(function (l) { return "<div>" + esc(new Date(l.t).toLocaleTimeString()) + " · " + esc(l.line) + "</div>"; }).join("") || "<div>暂无日志</div>";
+  const list = $("#homeTasks");
+  if (!list) return;
+  const recent = sessions.slice(0, 5);
+  list.innerHTML = recent.map(function (s) {
+    const n = (s.msgs || []).length;
+    return '<div class="item" data-open-session="' + esc(s.id) + '"><div class="t"><b>' + esc(s.title || "未命名会话") + '</b><span>消息 ' + n + '</span></div><span class="badge ok">继续</span></div>';
+  }).join("") || '<div class="sub">还没有会话，点「新建任务」开始</div>';
+  $$("[data-open-session]").forEach(function (el) {
+    el.onclick = function () { curSession = el.dataset.openSession; saveSessions(); renderSessions(); renderChat(); go("chat"); };
   });
 }
 function renderProjects() {
@@ -277,29 +291,51 @@ async function loadFiles() {
   $('#btnUp').onclick = () => { curRel = '.'; loadFiles(); };
 }
 async function loadTasks() {
-  const r = await api.mySummary ? await api.mySummary() : { ok: false };
-  const d = (r && r.data) || {};
-  curTasks = d.tasks || [];
-  const st = d.stats || {};
-  $('#taskHint').textContent = '今日 ' + (st.today_tasks || 0) + ' 条 · 累计 ' + (st.total_tasks || 0) + ' 条';
-  const statsHtml = `<div class="row-stats">
-    <span>技能 <b>${st.skills || 0}</b></span>
-    <span>经验 <b>${st.experiences || 0}</b>（待审 ${st.pending_experience || 0}）</span>
-  </div>`;
-  const toolsHtml = (d.tools || []).length ? '<div class="sub" style="margin-top:10px">本地工具使用：' +
-    (d.tools || []).slice(0, 6).map((x) => x.tool + '×' + x.n).join('、') + '</div>' : '';
-  $('#taskList').innerHTML = statsHtml + (curTasks.map((t) => `<div class="item" data-task="${t.id}"><div class="t"><b>${esc(cleanTitle(t.title))}</b><span>${fmtTime(t.created_at)}</span></div><span class="badge ${t.status === 'done' ? 'ok' : 'run'}">${esc(t.status)}</span></div>`).join('') || '<div class="sub">还没有任务</div>') + toolsHtml;
-  $$('[data-task]').forEach((el) => el.onclick = () => showTask(el.dataset.task));
+  const box = $("#taskList");
+  if (!box) return;
+  let totalMsgs = 0, totalSteps = 0;
+  const cards = sessions.map(function (s) {
+    const msgs = s.msgs || [];
+    const steps = msgs.filter(function (m) { return m.role === "sys"; });
+    totalMsgs += msgs.length;
+    totalSteps += steps.length;
+    const t = s.updatedAt || s.createdAt || "";
+    const when = t ? new Date(t).toLocaleString("zh-CN", { hour12: false }) : "";
+    return '<div class="item" data-rec="' + esc(s.id) + '"><div class="t"><b>' + esc(s.title || "未命名会话") + '</b><span>' + esc(when) + " · 消息 " + msgs.length + " · 执行步骤 " + steps.length + '</span></div><span class="badge ok">本机</span></div>';
+  }).join("");
+  const hint = $("#taskHint");
+  if (hint) hint.textContent = "会话 " + sessions.length + " · 消息 " + totalMsgs + " · 工具执行 " + totalSteps;
+  box.innerHTML = cards || '<div class="sub">还没有记录，去「对话」干点活</div>';
+  $$("[data-rec]").forEach(function (el) {
+    el.onclick = function () {
+      const s = sessions.find(function (x) { return x.id === el.dataset.rec; });
+      if (!s) return;
+      const steps = (s.msgs || []).filter(function (m) { return m.role === "sys"; });
+      box.innerHTML = '<div class="sub" style="padding:6px 12px">会话：' + esc(s.title) + ' · 执行步骤 ' + steps.length + '</div>' +
+        steps.map(function (m) { return '<div class="item"><div class="t"><b>' + esc(m.text) + '</b></div></div>'; }).join("") +
+        '<div style="padding:8px 12px"><button class="btn ghost" id="btnBackRec">返回列表</button></div>';
+      const back = $("#btnBackRec");
+      if (back) back.onclick = loadTasks;
+    };
+  });
+  loadArtifacts();
 }
-function cleanTitle(t) {
-  return String(t || '').replace('（飞书消息 · 回复直接发回飞书 · 简短口语化）', '').trim().slice(0, 60);
-}
-function showTask(id) {
-  const t = curTasks.find((x) => x.id === id); if (!t) return;
-  $('#taskDetailCard').style.display = 'block';
-  $('#tdTitle').textContent = t.title || '任务';
-  $('#tdMeta').innerHTML = `<span class="badge ${t.status === 'done' ? 'ok' : 'run'}">${esc(t.status)}</span><span class="badge">${id.slice(0, 10)}</span><span class="badge">${fmtTime(t.created_at)}</span>`;
-  $('#tdSteps').innerHTML = '<div class="tl"><b>任务创建</b><span>' + fmtTime(t.created_at) + '</span></div>' + (t.status === 'done' ? '<div class="tl"><b>执行完成</b><span>结果已回传云端</span></div>' : '<div class="tl"><b>执行中…</b></div>');
+
+async function loadArtifacts() {
+  const box = $("#artifactList");
+  if (!box || !api.listTextFiles) return;
+  const proj = (SNAP?.cfg?.projects || [])[0];
+  if (!proj) { box.innerHTML = '<div class="sub">先添加一个项目</div>'; return; }
+  const r = await api.listTextFiles({ dir: proj.dir + "/产出" });
+  const items = (r && r.items) || [];
+  box.innerHTML = items.slice(0, 50).map(function (f) {
+    return '<div class="item" data-art="' + esc(f.path) + '"><div class="t"><b>' + esc(f.name) + '</b></div><span class="badge ok">预览</span></div>';
+  }).join("") || '<div class="sub">还没有产物</div>';
+  $$("[data-art]").forEach(function (el) {
+    el.onclick = function () { previewFile(el.dataset.art, el.textContent.trim()); };
+  });
+  const rb = $("#btnArtifactRefresh");
+  if (rb) rb.onclick = loadArtifacts;
 }
 async function loadCapabilities() {
   if (!api.octopCapabilities) { $('#capsBody').innerHTML = '<div class="sub">当前版本不支持</div>'; return; }
