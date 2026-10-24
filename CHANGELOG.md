@@ -5,6 +5,30 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ---
 
+## [0.17.0] - 2026-10-24
+
+### 中文
+
+**新增：对话中可选专家与技能**
+- 对话页顶部新增「专家」下拉（云端 22 个专家）与「技能 N」按钮；选技能打开勾选面板，当前助理技能列表（如 24 条）按需勾选。
+- 勾选的技能随每轮对话下发（字段 `skills`），服务端按技能 slug 校验；切换专家时技能列表同步切换。
+- 修复：技能选项使用 slug（此前用显示名会被服务端拒绝 `skill(s) not found or disabled`）。
+
+**验证**
+- 勾选「备忘录」并以 slug 下发后，助理回复确认该技能可用。
+
+### English
+
+**Added: pick experts and skills right in the chat**
+- Chat header now has an "Expert" dropdown (22 cloud experts) and a "Skills N" button; the picker lists the current agent's skills and lets you tick them.
+- Selected skills are sent with each turn (`skills` field, validated by slug server-side); switching experts switches the skill list.
+- Fixed: skill options now use slugs (display names were rejected with `skill(s) not found or disabled`).
+
+**Verified**
+- Ticking "Apple Notes" and sending its slug made the agent confirm the skill is usable.
+
+---
+
 ## [0.16.1] - 2026-10-24
 
 ### 中文

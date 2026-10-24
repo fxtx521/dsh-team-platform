@@ -37,6 +37,10 @@ const api = window.wb || {
   runCmd: async () => ({ ok: true, output: '（预览模式，未执行真实命令）' }),
   chat: async (m) => ({ ok: true, data: { reply: '（预览模式）收到：' + m, elapsed_ms: 3200 } }),
   login: async () => ({ ok: true, user: { display_name: '演示员工' } }),
+  octopSkills: async () => ({ ok: true, items: [
+    { name: '备忘录', desc: '在 macOS 上创建、搜索和编辑 Apple 备忘录' },
+    { name: '提醒事项', desc: '管理提醒事项' },
+  ] }),
   experts: async () => ({ ok: true, data: { items: [
     { id: 'general-assistant', name: '小通 · 通用助手' },
     { id: 'business-operations', name: '业务流程专家' },
@@ -107,6 +111,36 @@ async function previewFile(file, title) {
   $('#pvBody').dataset.file = file || '';
   $('#previewModal').classList.add('show');
 }
+async function loadSkillPicker() {
+  const exSel = $('#chatExpert');
+  const r = await api.octopSkills({ expertId: exSel ? exSel.value : '' });
+  const items = (r && r.items) || [];
+  const box = $('#skList');
+  if (!box) return;
+  box.innerHTML = items.map((s) => `<label class="skrow"><input type="checkbox" value="${esc(s.slug || s.name)}" ${pickedSkills.includes(s.slug || s.name) ? 'checked' : ''} /><div><b>${esc(s.name)}</b><span>${esc((s.desc || '').slice(0, 80))}</span></div></label>`).join('') || '<div class="sub">这个助理还没有技能</div>';
+  box.querySelectorAll('input[type=checkbox]').forEach((cb) => {
+    cb.onchange = () => {
+      const v = cb.value;
+      if (cb.checked) { if (!pickedSkills.includes(v)) pickedSkills.push(v); }
+      else pickedSkills = pickedSkills.filter((x) => x !== v);
+      renderSkillCount();
+    };
+  });
+}
+function renderSkillCount() {
+  const el = $('#skillCount');
+  if (el) el.textContent = String(pickedSkills.length);
+}
+function bindSkillsModal() {
+  const open = async () => { await loadSkillPicker(); $('#skillsModal').classList.add('show'); };
+  const close = () => $('#skillsModal').classList.remove('show');
+  const b = $('#btnSkills');
+  if (b) b.onclick = open;
+  const c = $('#skClose'); if (c) c.onclick = close;
+  const ok = $('#skOk'); if (ok) ok.onclick = close;
+  const cl = $('#skClear'); if (cl) cl.onclick = () => { pickedSkills = []; loadSkillPicker(); renderSkillCount(); };
+}
+
 function bindPreviewModal() {
   const close = () => $('#previewModal').classList.remove('show');
   $('#pvClose').onclick = close;
@@ -419,6 +453,7 @@ function bindModal() {
 // ── 对话 ────────────────────────────────────────────────
 let chatMsgs = [];
 let attachments = [];  // 本轮对话附带的本地文件
+let pickedSkills = [];   // 本轮对话启用的技能
 
 // ── 会话管理（多会话，持久化到 localStorage）────────────────
 const SESS_KEY = 'lishi.sessions.v1';
@@ -510,7 +545,7 @@ async function sendChat() {
   const expert = $('#chatExpert') ? $('#chatExpert').value : '';
   let r;
   if (api.octopChat) {
-    const res = await api.octopChat({ text, sessionId: sid, agentId: expert || undefined });
+    const res = await api.octopChat({ text, sessionId: sid, agentId: expert || undefined, skills: pickedSkills.slice() });
     r = res && res.ok ? { ok: true, data: { reply: res.reply, elapsed_ms: res.elapsed_ms } } : { ok: false, data: { error: (res && res.error) || '对话失败' } };
   } else {
     r = await api.chat(text, sid, attachments.slice(), proj, expert);
@@ -544,6 +579,7 @@ function bindChat() {
       const items = (r && (r.items || (r.data && r.data.items))) || [];
       exSel.innerHTML = '<option value="">默认助理</option>' +
         items.map((e) => `<option value="${esc(e.id)}">${esc(e.name)}</option>`).join('');
+      exSel.onchange = () => { pickedSkills = []; renderSkillCount(); loadSkillPicker(); };
     })();
   }
   const sel = $('#chatProject');
@@ -582,6 +618,7 @@ function bind() {
   bindNameModal();
   bindBriefModal();
   bindPreviewModal();
+  bindSkillsModal();
   bindLogin();
   bindChat();
   $$('.nav-item').forEach((b) => b.onclick = () => go(b.dataset.view));

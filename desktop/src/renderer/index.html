@@ -55,9 +55,10 @@
           <div class="chat-main">
         <div class="chat-head">
           <div><h3>和助理对话</h3><p class="sub">直接说要做的事，它会调用本地工具读写你的项目文件。</p></div>
-          <div style="display:flex;gap:8px">
-            <select id="chatExpert" class="chat-proj" title="选择专家"></select>
-            <select id="chatProject" class="chat-proj"></select>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span class="selwrap"><b>专家</b><select id="chatExpert" class="chat-proj" title="选择专家"></select></span>
+            <button class="btn ghost" id="btnSkills">技能 <span id="skillCount">0</span></button>
+            <select id="chatProject" class="chat-proj" title="选择项目"></select>
           </div>
         </div>
         <div class="chat-body" id="chatBody"></div>
@@ -196,6 +197,14 @@
       <div id="lgErr" style="color:#dc2626;font-size:12.5px;min-height:18px"></div>
     </div>
     <div class="modal-f"><button class="btn primary" id="lgOk">登录</button></div>
+  </div>
+</div>
+
+<div class="modal-mask" id="skillsModal">
+  <div class="modal" style="width:560px">
+    <div class="modal-h"><h3 id="skTitle">选择技能</h3><button class="modal-x" id="skClose">✕</button></div>
+    <div class="modal-b"><div id="skList" style="max-height:52vh;overflow:auto"></div></div>
+    <div class="modal-f"><button class="btn ghost" id="skClear">全不选</button><button class="btn primary" id="skOk">确定</button></div>
   </div>
 </div>
 

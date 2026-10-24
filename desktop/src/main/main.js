@@ -405,6 +405,7 @@ async function octopSkills(expertId) {
   const list = Array.isArray(d) ? d : (d.items || d.skills || []);
   return { ok: r.ok, agentId: aid, items: list.map((s) => ({
     name: s.name || s.slug || s.id,
+    slug: s.slug || s.name || s.id,
     desc: s.description || "",
     kind: s.kind || "",
   })) };
@@ -721,7 +722,7 @@ async function repairAllAgentModels() {
   }
 }
 
-async function octopChat({ text, sessionId, agentId }) {
+async function octopChat({ text, sessionId, agentId, skills }) {
   const cfg = readCfg();
   const tk = cfg.octopToken;
   if (!tk) return { ok: false, error: "未登录 Octop" };
@@ -744,7 +745,9 @@ async function octopChat({ text, sessionId, agentId }) {
     const ws = new WebSocket(wsUrl);
     const timer = setTimeout(() => finish({ ok: false, error: "超时" }), 240000);
     ws.on("open", () => {
-      ws.send(JSON.stringify({ type: "user_turn", text, thread_id: tid || undefined, session_key: "client:" + (sessionId || "default") }));
+      const frame = { type: "user_turn", text, thread_id: tid || undefined, session_key: "client:" + (sessionId || "default") };
+      if (Array.isArray(skills) && skills.length) frame.skills = skills;
+      ws.send(JSON.stringify(frame));
     });
     ws.on("message", (buf) => {
       let m;

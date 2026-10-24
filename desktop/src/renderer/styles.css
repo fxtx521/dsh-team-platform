@@ -128,6 +128,11 @@ input{font-family:inherit}
 .chat-attach .chip{background:#f1f4f9;border:1px solid var(--line);border-radius:999px;padding:4px 10px;font-size:12px;color:#374151;display:flex;gap:6px;align-items:center}
 .chat-attach .chip b{font-weight:600}
 .chat-attach .chip span{cursor:pointer;color:#9aa2af}
+.selwrap{display:flex;align-items:center;gap:6px;font-size:12px;color:#6b7280}
+.skrow{display:flex;gap:10px;align-items:flex-start;padding:9px 6px;border-bottom:1px solid #f1f3f7;font-size:13px}
+.skrow input{margin-top:3px}
+.skrow b{display:block;font-weight:600;color:#1a1d24}
+.skrow span{color:#6b7280;font-size:12px}
 .chat-in{display:flex;gap:10px;padding:14px 20px;border-top:1px solid var(--line);background:#fff}
 .chat-in textarea{flex:1;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:13.5px;font-family:inherit;resize:none;outline:none;background:#fbfcfe}
 .chat-in textarea:focus{border-color:#ffc79b;background:#fff}
