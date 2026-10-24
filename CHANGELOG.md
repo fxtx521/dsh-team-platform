@@ -5,6 +5,20 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ---
 
+## [0.17.1] - 2026-10-24
+
+### 中文
+
+- **对话气泡支持 Markdown 渲染**：标题、加粗、斜体、行内代码、代码块、无序/有序列表、分隔线、段落间距；先转义再解析，避免 XSS。
+- 样式：代码块浅灰底+边框、列表缩进、标题字号加大，长回复更易读。
+
+### English
+
+- **Markdown rendering in chat bubbles**: headings, bold/italic, inline code, fenced code blocks, ordered/unordered lists, horizontal rules, paragraph spacing; escape-then-parse to avoid XSS.
+- Styling: light code blocks with borders, list indentation, larger headings — long answers are easier to scan.
+
+---
+
 ## [0.17.0] - 2026-10-24
 
 ### 中文

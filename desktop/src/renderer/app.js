@@ -499,10 +499,41 @@ function renderSessions() {
     };
   });
 }
+// 轻量 Markdown 渲染（先转义，再按行解析：标题/加粗/行内码/代码块/列表/换行）
+function md(src) {
+  const esc0 = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const inline = (s) => esc0(s)
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+  const lines = String(src || '').split('\n');
+  let html = '', inCode = false, inList = false;
+  for (const raw of lines) {
+    const line = raw.replace(/\s+$/, '');
+    if (/^```/.test(line)) {
+      if (inCode) { html += '</code></pre>'; inCode = false; }
+      else { if (inList) { html += '</ul>'; inList = false; } html += '<pre><code>'; inCode = true; }
+      continue;
+    }
+    if (inCode) { html += esc0(line) + '\n'; continue; }
+    const h = line.match(/^(#{1,4})\s+(.*)$/);
+    if (h) { if (inList) { html += '</ul>'; inList = false; } const lv = Math.min(h[1].length + 2, 5); html += '<h' + lv + '>' + inline(h[2]) + '</h' + lv + '>'; continue; }
+    const li = line.match(/^\s*([-*+]|\d+[.)])\s+(.*)$/);
+    if (li) { if (!inList) { html += '<ul>'; inList = true; } html += '<li>' + inline(li[2]) + '</li>'; continue; }
+    if (inList) { html += '</ul>'; inList = false; }
+    if (/^\s*[-*_]{3,}\s*$/.test(line)) { html += '<hr/>'; continue; }
+    if (!line.trim()) { html += '<div style="height:6px"></div>'; continue; }
+    html += '<p>' + inline(line) + '</p>';
+  }
+  if (inCode) html += '</code></pre>';
+  if (inList) html += '</ul>';
+  return html;
+}
+
 function renderChat() {
   const s = getSession(); if (!s) return;
   const box = $('#chatBody');
-  box.innerHTML = (s.msgs || []).map((m, i) => `<div class="msg ${m.role}">${esc(m.text)}${m.role === 'ai' ? `<span class="meta"><button class="mini" data-save="${i}">保存到项目</button>${m.meta ? ' · ' + esc(m.meta) : ''}</span>` : (m.role === 'sys' ? `data-file="${esc(m.file || '')}" data-out="${i}" style="cursor:pointer" title="点开看内容/输出"` : (m.meta ? `<span class="meta">${esc(m.meta)}</span>` : ''))}</div>`).join('');
+  box.innerHTML = (s.msgs || []).map((m, i) => `<div class="msg ${m.role}">${m.role === 'ai' ? md(m.text) : esc(m.text)}${m.role === 'ai' ? `<span class="meta"><button class="mini" data-save="${i}">保存到项目</button>${m.meta ? ' · ' + esc(m.meta) : ''}</span>` : (m.role === 'sys' ? `data-file="${esc(m.file || '')}" data-out="${i}" style="cursor:pointer" title="点开看内容/输出"` : (m.meta ? `<span class="meta">${esc(m.meta)}</span>` : ''))}</div>`).join('');
   if (!s.msgs || !s.msgs.length) box.innerHTML = '<div class="msg ai">你好，我是团队 AI 助理。<br>直接说你要做什么——比如「把项目里的报价单整理成表」，我会在你本地文件夹里读写文件。</div>';
   box.querySelectorAll('[data-file]').forEach((el) => {
     el.onclick = () => {
