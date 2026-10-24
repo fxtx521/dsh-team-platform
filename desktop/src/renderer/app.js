@@ -310,6 +310,12 @@ function loadCapabilitiesWith(c) {
   const box = $('#capsBody');
   const sec = (title, body) => '<div style="margin:14px 0 6px;font-weight:600">' + title + '</div>' + body;
   let html = '';
+  const pm = c.pluginMarket || {};
+  html += sec('插件市场（' + (pm.count || 0) + '）', (pm.items || []).map((p) => '<div class="item"><div class="t"><b>' + esc(p.name) + '</b><span>' + esc(p.kind + ' · ' + p.group + ' · ' + p.desc) + '</span></div></div>').join('') || '<div class="sub">无</div>');
+  const cc = c.connectorCatalog || {};
+  html += sec('连接器目录（' + (cc.count || 0) + '）', (cc.items || []).map((k) => '<div class="item"><div class="t"><b>' + esc(k.name) + '</b><span>' + esc(k.kind + ' · ' + k.auth) + '</span></div></div>').join('') || '<div class="sub">无</div>');
+  const at = c.agentTools || {};
+  html += sec('助理已装工具（' + (at.count || 0) + '）', (at.items || []).map((t) => '<div class="item"><div class="t"><b>' + esc(t.name) + '</b><span>' + esc(t.desc) + '</span></div></div>').join('') || '<div class="sub">未安装工具插件</div>');
   const us = c.users || {};
   html += sec('账号（' + (us.count || 0) + '）', (us.items || []).map((u) => '<div class="item"><div class="t"><b>' + esc(u.name || u.username) + '</b><span>' + esc(u.username) + '</span></div><span class="badge ok">' + esc(u.role) + '</span></div>').join('') || '<div class="sub">无</div>');
   const bk = c.backupState || {};

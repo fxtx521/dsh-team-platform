@@ -462,6 +462,26 @@ async function octopCapabilities(search) {
     const r = await octopFetch("GET", "/api/agents/" + aid + "/terminal/context");
     return { ok: r.ok, data: r.data };
   });
+  out.pluginMarket = await safe(async () => {
+    const r = await octopFetch("GET", "/api/plugins/market");
+    const d = r.data || [];
+    const list = Array.isArray(d) ? d : (d.items || []);
+    return { ok: r.ok, count: list.length,
+             items: list.slice(0, 24).map((p) => ({ id: p.id, name: p.name || p.id, kind: p.kind || "", group: p.group || "", desc: String(p.description || "").slice(0, 60) })) };
+  });
+  out.connectorCatalog = await safe(async () => {
+    const r = await octopFetch("GET", "/api/connectors/catalog");
+    const d = r.data || [];
+    const list = Array.isArray(d) ? d : (d.items || []);
+    return { ok: r.ok, count: list.length,
+             items: list.slice(0, 24).map((c) => ({ kind: c.kind, name: c.name || c.kind, auth: c.auth_kind || "" })) };
+  });
+  out.agentTools = await safe(async () => {
+    const r = await octopFetch("GET", "/api/plugins/agents/" + aid + "/tools");
+    const d = r.data || {};
+    const list = Array.isArray(d) ? d : (d.tools || []);
+    return { ok: r.ok, count: list.length, items: list.slice(0, 20).map((t) => ({ name: t.name || t.id, desc: String(t.description || "").slice(0, 60) })) };
+  });
   out.users = await safe(async () => {
     const r = await octopFetch("GET", "/api/users");
     const d = r.data || [];

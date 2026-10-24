@@ -5,6 +5,24 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ---
 
+## [0.22.0] - 2026-10-24
+
+### 中文
+
+- **插件市场**：`GET /api/plugins/market`（当前 8KB 目录，含工具类插件如「空气质量」）
+- **连接器目录**：`GET /api/connectors/catalog`（21KB，腾讯文档等 MCP 连接器及认证方式）
+- **助理已装工具**：`GET /api/plugins/agents/{id}/tools`（当前为空）
+- 能力页统一展示并标注数量，便于后续「一键安装」改造
+
+### English
+
+- **Plugin market**: `GET /api/plugins/market` (8KB catalog, tool plugins such as air quality)
+- **Connector catalog**: `GET /api/connectors/catalog` (21KB, e.g. Tencent Docs MCP connector with auth kinds)
+- **Agent installed tools**: `GET /api/plugins/agents/{id}/tools` (currently empty)
+- Capabilities page lists them with counts, ready for a future one-click install flow
+
+---
+
 ## [0.21.0] - 2026-10-24
 
 ### 中文
