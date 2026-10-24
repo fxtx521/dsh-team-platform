@@ -326,7 +326,7 @@ function loadCapabilitiesWith(c) {
   html += sec('浏览器会话', '<div class="sub">环境：' + esc(bs.environment || '-') + ' · 会话数 ' + (bs.count || 0) + '</div>');
   const kb = c.knowledge || {};
   html += sec('知识库（' + (kb.count || 0) + '）',
-    ((kb.items || []).map((k) => '<div class="item"><div class="t"><b>' + esc(k.name || k.id) + '</b><span>文档 ' + (k.docs || 0) + '</span></div></div>').join('') || '<div class="sub">还没有知识库</div>') +
+    ((kb.items || []).map((k) => '<div class="item"><div class="t"><b>' + esc(k.name || k.id) + '</b><span>文档 ' + (k.docs || 0) + '</span></div><button class="mini" data-kbup="' + esc(k.id) + '">上传本地文件</button></div>').join('') || '<div class="sub">还没有知识库</div>') +
     '<div class="sub" style="margin-top:6px">能力状态：' + (kb.usable ? '可用' : '未启用（需要先在 Octop 里配置向量模型）') + '</div>');
   const subs = c.subagents || {};
   html += sec('子代理（' + (subs.count || 0) + '）',
@@ -345,6 +345,24 @@ function loadCapabilitiesWith(c) {
   html += sec('终端', '<div class="sub">' + esc(JSON.stringify(tm.data || {}).slice(0, 200)) + '</div>');
   box.innerHTML = html;
   const b = $('#btnCapsRefresh'); if (b) b.onclick = loadCapabilities;
+  $$('[data-kbup]').forEach((btn) => {
+    btn.onclick = async () => {
+      const p = (SNAP?.cfg?.projects || [])[0];
+      if (!p) { toast('先添加一个项目'); return; }
+      const rf = await api.listTextFiles({ dir: p.dir });
+      const items = (rf && rf.items) || [];
+      if (!items.length) { toast('项目里没有文本文件'); return; }
+      askName('上传哪个文件？（输入序号 1-' + items.length + '）', '1', async (v) => {
+        const f = items[parseInt(v, 10) - 1];
+        if (!f) { toast('序号不对'); return; }
+        const rd = await api.readFile({ file: f.path, max: 200000 });
+        if (!rd || !rd.ok) { toast('读取失败'); return; }
+        const up = await api.octopKbUpload({ kbId: btn.dataset.kbup, name: f.name, content: rd.content, format: 'md' });
+        toast(up && up.ok ? '已上传到知识库' : ('上传失败: ' + JSON.stringify((up && up.data) || {}).slice(0, 80)));
+        loadCapabilities();
+      });
+    };
+  });
   const go = $('#hubGo');
   if (go) go.onclick = async () => {
     const q = ($('#hubQ') || {}).value || 'SOP';

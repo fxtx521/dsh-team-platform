@@ -1,6 +1,6 @@
 # Octop 能力接入清单 / Capability Matrix
 
-> 更新：2026-10-24（v0.20.0）。状态：✅ 已接入并实测 · ⚠️ 接口存在但需配置 · ❌ 该版本无公开接口 · ⏳ 待做
+> 更新：2026-10-24（v0.21.0）。状态：✅ 已接入并实测 · ⚠️ 接口存在但需配置 · ❌ 该版本无公开接口 · ⏳ 待做
 
 ## 一、本地电脑访问（客户端独有）/ Local machine access
 
@@ -11,7 +11,10 @@
 | 写文件 | ✅ | MCP `local_write_file` |
 | 执行命令 | ✅ | MCP `local_run_cmd` + 客户端终端（白名单、60s 超时）|
 | 目录白名单 | ✅ | 只允许登记过的项目目录 |
-| 文件搜索 / 剪贴板 / 打开应用 | ⏳ | 下一批扩展 |
+| 文件搜索 | ✅ | MCP `local_find_files` |
+| 内容搜索 | ✅ | MCP `local_grep_files` |
+| 剪贴板读写 | ✅ | MCP `local_clipboard_read/write` |
+| 打开路径 | ✅ | MCP `local_open_path`（访达/资源管理器）|
 
 ## 二、云端能力 / Cloud capabilities
 
@@ -25,7 +28,7 @@
 | 技能 | `GET /api/agents/{id}/skills` | ✅ 24 条，可选择下发 |
 | 记忆/经验 | `/api/agents/{id}/memory/*` | ✅ 候选 9 条，可通过/驳回 |
 | 连接器（自定义 MCP）| `/api/connectors/custom-mcp` | ✅ |
-| 知识库 | `/api/knowledge-bases` | ⚠️ 列表可用（0 个）；需先配置向量模型 |
+| 知识库 | `/api/knowledge-bases` | ✅ 已启用（ONNX bge-small-zh），可建库、上传文档、检索 |
 | 技能市场 | `/api/skill-packages/hub/search` | ✅ |
 | 子代理目录 | `/api/subagent-catalog` | ✅ |
 | 当前助理子代理 | `/api/agents/{id}/subagents` | ✅ |

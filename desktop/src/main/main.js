@@ -524,6 +524,17 @@ async function octopCapabilities(search) {
 
 ipcMain.handle('octop:capabilities', async (_e, p) => await octopCapabilities(p && p.search));
 
+ipcMain.handle('octop:kbUpload', async (_e, { kbId, name, content, format }) => {
+  const r = await octopFetch("POST", "/api/knowledge-bases/" + encodeURIComponent(kbId) + "/documents/text",
+    { name: name || "未命名.txt", content: String(content || ""), format: format || "txt" });
+  return { ok: r.ok, data: r.data };
+});
+
+ipcMain.handle('octop:kbCreate', async (_e, { name, description }) => {
+  const r = await octopFetch("POST", "/api/knowledge-bases", { name, description: description || "" });
+  return { ok: r.ok, data: r.data, error: r.ok ? "" : ((r.data && (r.data.error || r.data.detail)) || "") };
+});
+
 ipcMain.handle('octop:memory', async () => await octopMemoryCandidates());
 ipcMain.handle('octop:skills', async (_e, p) => await octopSkills(p && p.expertId));
 ipcMain.handle('octop:candidateAction', async (_e, p) => await octopCandidateAction(p && p.id, p && p.action));
@@ -591,6 +602,12 @@ function mcpTools() {
       inputSchema: { type: "object", properties: { dir: { type: "string" }, keyword: { type: "string" }, limit: { type: "number" } }, required: ["dir", "keyword"] } },
     { name: "local_open_path", description: "在访达/资源管理器中打开文件或文件夹",
       inputSchema: { type: "object", properties: { path: { type: "string" } }, required: ["path"] } },
+    { name: "local_clipboard_read", description: "读取系统剪贴板文本",
+      inputSchema: { type: "object", properties: {} } },
+    { name: "local_clipboard_write", description: "写入系统剪贴板文本",
+      inputSchema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] } },
+    { name: "local_grep_files", description: "在目录内按内容关键字搜索文本文件",
+      inputSchema: { type: "object", properties: { dir: { type: "string" }, keyword: { type: "string" } }, required: ["dir", "keyword"] } },
     { name: "local_run_cmd", description: "在本地执行命令（需开启命令白名单）",
       inputSchema: { type: "object", properties: { cmd: { type: "string" }, cwd: { type: "string" } }, required: ["cmd"] } },
   ];
@@ -649,6 +666,49 @@ function mcpExec(tool, args) {
     if (!isInside(cfgRoots(), p2)) throw new Error("路径不在白名单");
     shell.openPath(p2);
     return "已打开: " + p2;
+  }
+  if (tool === "local_clipboard_read") {
+    const { execFileSync } = require("child_process");
+    const cmd = process.platform === "win32" ? ["powershell", ["-NoProfile", "-Command", "Get-Clipboard"]] : ["pbpaste", []];
+    return String(execFileSync(cmd[0], cmd[1], { timeout: 5000 })).slice(0, 20000);
+  }
+  if (tool === "local_clipboard_write") {
+    const { execFileSync, spawn } = require("child_process");
+    const text = String(args.text || "");
+    if (process.platform === "win32") {
+      const p = spawn("powershell", ["-NoProfile", "-Command", "Set-Clipboard -Value $input"], { stdio: ["pipe", "ignore", "ignore"] });
+      p.stdin.end(text);
+    } else {
+      const p = spawn("pbcopy", [], { stdio: ["pipe", "ignore", "ignore"] });
+      p.stdin.end(text);
+    }
+    return "已写入剪贴板（" + text.length + " 字符）";
+  }
+  if (tool === "local_grep_files") {
+    const root = path.resolve(String(args.dir || ""));
+    if (!isInside(cfgRoots(), root)) throw new Error("目录不在白名单");
+    const kw = String(args.keyword || "").toLowerCase();
+    const out = [];
+    const walk = (d, depth) => {
+      if (out.length > 60 || depth > 3) return;
+      let names = [];
+      try { names = fs.readdirSync(d); } catch { return; }
+      for (const n of names) {
+        if (n.startsWith(".") || n === "node_modules") continue;
+        const full = path.join(d, n);
+        let st = null; try { st = fs.statSync(full); } catch {}
+        if (!st) continue;
+        if (st.isDirectory()) { walk(full, depth + 1); continue; }
+        if (st.size > 2 * 1024 * 1024) continue;
+        let txt = ""; try { txt = fs.readFileSync(full, "utf8"); } catch { continue; }
+        if (txt.toLowerCase().includes(kw)) {
+          const line = txt.split("\n").find((l) => l.toLowerCase().includes(kw)) || "";
+          out.push(full + " :: " + line.trim().slice(0, 120));
+        }
+      }
+    };
+    walk(root, 0);
+    return out.length ? out.join("\n") : "没有内容匹配";
   }
   if (tool === "local_run_cmd") {
     if (!cfg.allowCommand) throw new Error("命令执行未开启");

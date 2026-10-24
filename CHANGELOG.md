@@ -5,6 +5,34 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ---
 
+## [0.21.0] - 2026-10-24
+
+### 中文
+
+**知识库真正打通（端到端实测）**
+- 启用 ONNX 向量模型 `BAAI/bge-small-zh-v1.5`（下载 → 激活 → 开启知识库功能，`usable=true`）
+- 创建知识库「团队知识库」，上传文档 `台账整理规范.md`（140B，状态 processing→可检索）
+- **客户端**：能力页可「上传本地文件」到知识库（读本地项目文件 → 写入云端知识库）
+
+**本地工具扩充到 9 个**
+- `local_clipboard_read` / `local_clipboard_write`（系统剪贴板）
+- `local_grep_files`（按内容关键字搜索目录内文本文件）
+- 原有：列目录、读文件、写文件、文件搜索、打开路径、执行命令
+
+### English
+
+**Knowledge bases fully wired (end-to-end verified)**
+- Enabled the ONNX embedding model `BAAI/bge-small-zh-v1.5` (download → activate → feature on; `usable=true`)
+- Created the "Team KB" base and uploaded `台账整理规范.md` (140B, processing → searchable)
+- **Client**: the capabilities page can upload a local project file into the cloud knowledge base
+
+**Local tools now 9**
+- `local_clipboard_read` / `local_clipboard_write` (system clipboard)
+- `local_grep_files` (content search across text files in a folder)
+- Plus: list dir, read file, write file, find files, open path, run command
+
+---
+
 ## [0.20.1] - 2026-10-24
 
 ### 中文
