@@ -749,34 +749,35 @@ def octop_api_token() -> str:
     _octop_token["exp"] = time.time() + 3000
     return _octop_token["t"]
 
-def octop_create_thread() -> str:
-    """通过 Octop HTTP 接口新建独立会话线程。"""
+def octop_create_thread(agent_id: str = "") -> str:
+    """通过 Octop HTTP 接口新建独立会话线程（按指定助理）。"""
     import urllib.request as _u
-    req = _u.Request(OCTOP_API + "/api/agents/" + OCTOP_AGENT + "/threads",
+    req = _u.Request(OCTOP_API + "/api/agents/" + (agent_id or OCTOP_AGENT) + "/threads",
                      data=b"{}", method="POST",
                      headers={"Content-Type": "application/json", "Authorization": "Bearer " + octop_api_token()})
     d = json.loads(_u.urlopen(req, timeout=30).read())
     return d.get("thread_id", "")
 
-def thread_for_session(session_id: str) -> str:
-    """每个客户端会话对应一个独立的 Octop thread（没有就新建）。"""
+def thread_for_session(session_id: str, agent_id: str = "") -> str:
+    """每个客户端会话（+助理）对应一个独立 Octop thread。"""
     if not session_id:
         return ""
+    key = session_id + "@" + (agent_id or OCTOP_AGENT)
     c = conn()
-    row = c.execute("SELECT thread_id FROM chat_sessions WHERE session_id=?", (session_id,)).fetchone()
+    row = c.execute("SELECT thread_id FROM chat_sessions WHERE session_id=?", (key,)).fetchone()
     c.close()
     if row and row["thread_id"]:
         return row["thread_id"]
     tid = ""
     try:
-        tid = octop_create_thread()
+        tid = octop_create_thread(agent_id)
     except Exception as e:
         print("create thread failed:", e)
     if tid:
         c = conn()
         try:
             c.execute("INSERT OR REPLACE INTO chat_sessions(id,session_id,thread_id,created_at) VALUES(?,?,?,?)",
-                      (uuid.uuid4().hex, session_id, tid, now()))
+                      (uuid.uuid4().hex, key, tid, now()))
             c.commit()
         except Exception:
             pass
@@ -963,6 +964,22 @@ async def list_experts(request: Request, x_api_key: Optional[str] = Header(None)
                       "desc": (e.get("description") or {}).get("zh") if isinstance(e.get("description"), dict) else (e.get("description") or "")})
     return {"ok": True, "items": items}
 
+_model_fixed = set()
+
+def _ensure_agent_model(aid: str):
+    if not aid or aid in _model_fixed:
+        return
+    try:
+        import urllib.request as _u2
+        model = os.environ.get("DSH_OCTOP_MODEL", "mimo-v2.6-flash")
+        req = _u2.Request(OCTOP_API + "/api/agents/" + aid, data=json.dumps({"default_model": model}).encode(),
+                          method="PATCH",
+                          headers={"Content-Type": "application/json", "Authorization": "Bearer " + octop_api_token()})
+        _u2.urlopen(req, timeout=20).read()
+        _model_fixed.add(aid)
+    except Exception as _e:
+        print("set expert model failed:", _e)
+
 def agent_for_expert(expert_id: str) -> str:
     """专家 -> 助理：没有就创建（缓存映射）。"""
     if not expert_id or expert_id in ("default", "general-assistant"):
@@ -974,17 +991,51 @@ def agent_for_expert(expert_id: str) -> str:
         row = None
     c.close()
     if row:
+        _ensure_agent_model(row["agent_id"])
         return row["agent_id"]
+    # 先按专家名查已有助理（同名即为该专家已创建）
+    import urllib.request as _u
+    def _agent_list():
+        try:
+            req = _u.Request(OCTOP_API + "/api/agents", headers={"Authorization": "Bearer " + octop_api_token()})
+            return json.loads(_u.urlopen(req, timeout=20).read())
+        except Exception:
+            return []
+    def _expert_name(eid):
+        try:
+            req = _u.Request(OCTOP_API + "/api/experts", headers={"Authorization": "Bearer " + octop_api_token()})
+            for e in json.loads(_u.urlopen(req, timeout=20).read()):
+                if e.get("id") == eid:
+                    lb = e.get("label") or {}
+                    return lb.get("zh") or lb.get("en") or eid
+        except Exception:
+            pass
+        return eid
+    ename = _expert_name(expert_id)
+    for a in _agent_list():
+        if (a.get("name") or "") == ename:
+            aid = a.get("agent_id") or ""
+            break
+    else:
+        aid = ""
     env = dict(os.environ); env["HOME"] = OCTOP_HOME
-    aid = ""
-    try:
-        p = subprocess.run([OCTOP_BIN, "--json", "agent", "from-expert", expert_id, "--user", "admin"],
-                           capture_output=True, text=True, timeout=120, env=env)
-        txt = (p.stdout or "").strip().splitlines()
-        aid = json.loads(txt[-1]).get("agent_id", "") if txt else ""
-    except Exception as e:
-        print("create agent from expert failed:", e)
+    if not aid:
+        try:
+            p = subprocess.run([OCTOP_BIN, "--json", "agent", "from-expert", expert_id, "--user", "admin"],
+                               capture_output=True, text=True, timeout=180, env=env)
+            txt = [x for x in (p.stdout or "").strip().splitlines() if x.strip().startswith("{")]
+            aid = json.loads(txt[-1]).get("agent_id", "") if txt else ""
+            if not aid:
+                print("from-expert stderr:", (p.stderr or "")[:200])
+        except Exception as e:
+            print("create agent from expert failed:", e)
+        if not aid:
+            for a in _agent_list():
+                if (a.get("name") or "") == ename:
+                    aid = a.get("agent_id") or ""
+                    break
     if aid:
+        _ensure_agent_model(aid)
         c = conn()
         try:
             c.execute("INSERT OR REPLACE INTO expert_agents(id,expert_id,agent_id,created_at) VALUES(?,?,?,?)",
@@ -1161,7 +1212,10 @@ async def chat_with_assistant(request: Request, x_api_key: Optional[str] = Heade
     if not msg:
         raise HTTPException(400, "message required")
     sid = str(b.get("session_id") or "")
-    tid = await _asyncio.to_thread(thread_for_session, sid) if sid else ""
+    aid0 = OCTOP_AGENT
+    if b.get("expert_id"):
+        aid0 = await _asyncio.to_thread(agent_for_expert, str(b["expert_id"]))
+    tid = await _asyncio.to_thread(thread_for_session, sid, aid0) if sid else ""
     ctx = ""
     try:
         ctx = await _asyncio.to_thread(recall_skills, msg, 3)
@@ -1182,9 +1236,7 @@ async def chat_with_assistant(request: Request, x_api_key: Optional[str] = Heade
     parts.append("【用户问题】\n" + msg)
     final_msg = "\n\n".join(parts)
     # 专家（可选）：不同专家 = 不同助理实例
-    aid = OCTOP_AGENT
-    if b.get("expert_id"):
-        aid = await _asyncio.to_thread(agent_for_expert, str(b["expert_id"]))
+    aid = aid0
     res = await _asyncio.to_thread(octop_chat, final_msg, aid, 240, "", tid)
     return {"ok": res["ok"], "reply": res["reply"], "elapsed_ms": res["elapsed_ms"], "error": res.get("error", ""),
             "who": (terminal["user_name"] if terminal else "admin")}
