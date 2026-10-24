@@ -201,6 +201,21 @@ ipcMain.handle('project:writeFile', (_e, { file, content }) => {
   if (!isInside(cfgRoots(), f)) return { ok: false, error: '文件不在允许范围' };
   try { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, content, 'utf8'); log('已写文件: ' + f); return { ok: true }; } catch (e) { return { ok: false, error: e.message }; }
 });
+ipcMain.handle('project:readBrief', (_e, { dir }) => {
+  try {
+    const f = path.join(path.resolve(dir), 'PROJECT.md');
+    return { ok: true, content: fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : '' };
+  } catch (e) { return { ok: false, content: '', error: e.message }; }
+});
+ipcMain.handle('project:saveBrief', (_e, { dir, content }) => {
+  const base = path.resolve(dir);
+  if (!isInside(cfgRoots(), base)) return { ok: false, error: '目录不在允许范围' };
+  try {
+    fs.writeFileSync(path.join(base, 'PROJECT.md'), String(content || ''), 'utf8');
+    log('已保存项目简报: ' + base);
+    return { ok: true };
+  } catch (e) { return { ok: false, error: e.message }; }
+});
 ipcMain.handle('project:openInFinder', (_e, dir) => { shell.openPath(dir); return true; });
 ipcMain.handle('project:reveal', (_e, file) => { shell.showItemInFolder(file); return true; });
 
@@ -252,6 +267,7 @@ async function pollOnce() {
   } catch (e) { /* 网络抖动忽略 */ }
   if (!call) return;
   const { id, tool, args } = call;
+  const t0 = Date.now();
   let ok = true, output = '';
   try {
     if (tool === 'local_list_dir') {
@@ -277,14 +293,26 @@ async function pollOnce() {
       const bin = String(args.cmd || '').trim().split(/\s+/)[0];
       if (!(cfg.cmdWhitelist || []).includes(bin)) throw new Error('不在命令白名单: ' + bin);
       const wd = args.cwd && isInside(cfgRoots(), path.resolve(args.cwd)) ? path.resolve(args.cwd) : cfg.projectRoot;
+      const shell = process.platform === 'win32' ? 'cmd.exe' : '/bin/sh';
+      const shellArgs = process.platform === 'win32' ? ['/c', String(args.cmd)] : ['-c', String(args.cmd)];
       output = await new Promise((resolve, reject) => {
-        execFile('/bin/sh', ['-c', String(args.cmd)], { cwd: wd, timeout: 60000, maxBuffer: 4 * 1024 * 1024 },
+        execFile(shell, shellArgs, { cwd: wd, timeout: 60000, maxBuffer: 4 * 1024 * 1024 },
           (err, stdout, stderr) => { if (err) reject(new Error((stderr || err.message).slice(0, 2000))); else resolve((stdout || '').slice(0, 20000)); });
       });
     } else throw new Error('未知工具 ' + tool);
   } catch (e) { ok = false; output = ''; log('本地工具失败: ' + tool + ' · ' + e.message); }
   if (ok) log('本地工具执行: ' + tool);
-  try { turn.steps.push({ tool: tool, args_digest: '', duration_ms: 0, ok: ok ? 1 : 0, error_code: ok ? '' : 'tool_error' }); } catch {}
+  if (win && !win.isDestroyed()) {
+    win.webContents.send('app:tool', {
+      tool, ok, ms: dur,
+      dir: args && (args.dir || args.file || args.cmd || ''),
+      path: args && (args.file || args.dir || ''),
+      argsText: String(args && (args.cmd || args.file || args.dir) || '').slice(0, 160),
+      outputPreview: String(output || '').slice(0, 1200),
+    });
+  }
+  const dur = Date.now() - t0;
+  try { turn.steps.push({ tool: tool, args_digest: '', duration_ms: dur, ok: ok ? 1 : 0, error_code: ok ? '' : 'tool_error' }); } catch {}
   try {
     await httpReq('POST', cfg.serverUrl.replace(/\/$/, '') + '/v1/local/result',
       { id, ok, output, error: ok ? '' : '执行失败' },
@@ -307,9 +335,31 @@ function startPoller() {
   loop();
 }
 
-ipcMain.handle('cloud:chat', async (_e, { message, sessionId }) => {
+ipcMain.handle('cloud:mySummary', async () => {
+  return await api('GET', '/v1/my/summary');
+});
+
+ipcMain.handle('cloud:chat', async (_e, { message, sessionId, files, projectId }) => {
   const t = newTurn(message);
-  const r = await api('POST', '/v1/chat', { message, session_id: sessionId || '' });
+  for (const f of (files || [])) {
+    try {
+      const c = fs.readFileSync(f.path, 'utf8').slice(0, 12000);
+      (t.attachments = t.attachments || []).push({ name: f.name, content: c });
+    } catch (e) { log('读取附件失败: ' + f.name); }
+  }
+  // 自动附带当前项目简报 PROJECT.md（项目记忆）
+  try {
+    if (projectId) {
+      const p = (readCfg().projects || []).find((x) => x.id === projectId);
+      if (p) {
+        const bf = path.join(path.resolve(p.dir), 'PROJECT.md');
+        if (fs.existsSync(bf)) {
+          (t.attachments = t.attachments || []).unshift({ name: 'PROJECT.md（项目简报）', content: fs.readFileSync(bf, 'utf8').slice(0, 8000) });
+        }
+      }
+    }
+  } catch (e) { log('读取项目简报失败: ' + e.message); }
+  const r = await api('POST', '/v1/chat', { message, session_id: sessionId || '', files: t.attachments || [] });
   if (r.ok) log('对话完成 · ' + (r.data.elapsed_ms || 0) + 'ms');
   // 上报这一轮（任务 + 本地步骤 + 摘要），让云端能沉淀经验
   try {

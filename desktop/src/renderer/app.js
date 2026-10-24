@@ -36,6 +36,15 @@ const api = window.wb || {
   reveal: async () => true,
   runCmd: async () => ({ ok: true, output: '（预览模式，未执行真实命令）' }),
   chat: async (m) => ({ ok: true, data: { reply: '（预览模式）收到：' + m, elapsed_ms: 3200 } }),
+  mySummary: async () => ({ ok: true, data: {
+    stats: { total_tasks: 102, today_tasks: 59, skills: 7, experiences: 61, pending_experience: 6 },
+    tasks: [
+      { id: 't1', title: '客户资料核查 · 山东鼎晟机械', status: 'done', created_at: new Date().toISOString() },
+      { id: 't2', title: '台账整理 · 本月客户台账', status: 'done', created_at: new Date().toISOString() },
+      { id: 't3', title: '标书初稿 · 某园区餐车采购', status: 'done', created_at: new Date().toISOString() },
+    ],
+    tools: [{ tool: 'local_read_file', n: 18 }, { tool: 'local_write_file', n: 9 }, { tool: 'local_list_dir', n: 7 }, { tool: 'local_run_cmd', n: 3 }],
+  } }),
   listTextFiles: async () => ({ ok: true, items: [{ name: '招标文件摘要.txt', path: '/tmp/a.txt' }, { name: '客户资料.csv', path: '/tmp/b.csv' }] }),
   runTask: async () => ({ ok: true, data: { task_id: 'mock-task', elapsed_ms: 7600, reply: '（预览模式）这是一份按 SOP 生成的示例结果。' } }),
   saveOutput: async () => ({ ok: true, path: '/tmp/out.md' }),
@@ -71,6 +80,38 @@ function askName(title, suggest, cb) {
   $('#nameModal').classList.add('show');
   setTimeout(() => { const el = $('#nmInput'); el.focus(); el.select(); }, 50);
 }
+function showText(title, text) {
+  $('#pvTitle').textContent = title || '输出';
+  $('#pvBody').textContent = text || '（无输出）';
+  $('#pvBody').dataset.file = '';
+  $('#previewModal').classList.add('show');
+}
+async function previewFile(file, title) {
+  const r = await api.readFile({ file, max: 60000 });
+  $('#pvTitle').textContent = title || (file || '').split(/[\\/]/).pop() || '文件预览';
+  $('#pvBody').textContent = r && r.ok ? (r.content || '（空文件）') : ('读取失败：' + ((r && r.error) || ''));
+  $('#pvBody').dataset.file = file || '';
+  $('#previewModal').classList.add('show');
+}
+function bindPreviewModal() {
+  const close = () => $('#previewModal').classList.remove('show');
+  $('#pvClose').onclick = close;
+  $('#pvOk').onclick = close;
+  $('#pvReveal').onclick = () => { const f = $('#pvBody').dataset.file; if (f) api.reveal(f); };
+}
+
+function bindBriefModal() {
+  const close = () => $('#briefModal').classList.remove('show');
+  $('#brClose').onclick = close;
+  $('#brCancel').onclick = close;
+  $('#brOk').onclick = async () => {
+    const dir = $('#brText').dataset.dir;
+    const r = await api.saveBrief({ dir, content: $('#brText').value });
+    close();
+    toast(r && r.ok ? '项目简报已保存' : '保存失败');
+  };
+}
+
 function bindNameModal() {
   const close = () => $('#nameModal').classList.remove('show');
   $('#nmClose').onclick = close;
@@ -115,8 +156,18 @@ function renderHome() {
 }
 function renderProjects() {
   const cfg = SNAP?.cfg || {};
-  $('#projectGrid').innerHTML = (cfg.projects || []).map((p) => `<div class="project" data-id="${p.id}"><b>${esc(p.name)}</b><div class="path">${esc(p.dir)}</div><div class="ops"><button class="btn ghost" data-open="${p.id}">浏览文件</button><button class="btn ghost" data-del="${p.id}">移除</button></div></div>`).join('') || '<div class="sub">还没有项目，点右上角「添加项目」把文件夹登记进来</div>';
+  $('#projectGrid').innerHTML = (cfg.projects || []).map((p) => `<div class="project" data-id="${p.id}"><b>${esc(p.name)}</b><div class="path">${esc(p.dir)}</div><div class="ops"><button class="btn ghost" data-open="${p.id}">浏览文件</button><button class="btn ghost" data-brief="${p.id}">简报</button><button class="btn ghost" data-del="${p.id}">移除</button></div></div>`).join('') || '<div class="sub">还没有项目，点右上角「添加项目」把文件夹登记进来</div>';
   $$('[data-open]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); openProject(b.dataset.open); });
+  $$('[data-brief]').forEach((b) => b.onclick = async (e) => {
+    e.stopPropagation();
+    const p = (SNAP?.cfg?.projects || []).find((x) => x.id === b.dataset.brief);
+    if (!p) return;
+    const r = await api.readBrief({ dir: p.dir });
+    $('#brTitle').textContent = '项目简报 · ' + p.name;
+    $('#brText').value = (r && r.content) || '';
+    $('#brText').dataset.dir = p.dir;
+    $('#briefModal').classList.add('show');
+  });
   $$('[data-del]').forEach((b) => b.onclick = async (e) => { e.stopPropagation(); await api.removeProject(b.dataset.del); await refresh(); toast('已移除'); });
 }
 async function openProject(id) {
@@ -137,16 +188,31 @@ async function loadFiles() {
   $$('#fileList .file').forEach((el) => el.onclick = () => {
     const name = el.dataset.name; const isDir = el.dataset.dir === '1';
     if (isDir) { curRel = curRel === '.' ? name : curRel + '/' + name; loadFiles(); }
-    else { toast('双击可在本地打开，或让 AI 处理'); }
+    else {
+      const full = curRel === '.' ? (curProject.dir + '/' + name) : (curProject.dir + '/' + curRel + '/' + name);
+      previewFile(full, name);
+    }
   });
   $('#btnOpenFinder').onclick = () => api.openInFinder(curProject.dir);
   $('#btnUp').onclick = () => { curRel = '.'; loadFiles(); };
 }
 async function loadTasks() {
-  const r = await api.tasks(); curTasks = (r && r.data && r.data.items) || [];
-  $('#taskHint').textContent = '共 ' + curTasks.length + ' 条 · 来自云端';
-  $('#taskList').innerHTML = curTasks.map((t) => `<div class="item" data-task="${t.id}"><div class="t"><b>${esc(t.title)}</b><span>${fmtTime(t.created_at)}</span></div><span class="badge ${t.status === 'done' ? 'ok' : 'run'}">${esc(t.status)}</span></div>`).join('') || '<div class="sub">暂无任务</div>';
+  const r = await api.mySummary ? await api.mySummary() : { ok: false };
+  const d = (r && r.data) || {};
+  curTasks = d.tasks || [];
+  const st = d.stats || {};
+  $('#taskHint').textContent = '今日 ' + (st.today_tasks || 0) + ' 条 · 累计 ' + (st.total_tasks || 0) + ' 条';
+  const statsHtml = `<div class="row-stats">
+    <span>技能 <b>${st.skills || 0}</b></span>
+    <span>经验 <b>${st.experiences || 0}</b>（待审 ${st.pending_experience || 0}）</span>
+  </div>`;
+  const toolsHtml = (d.tools || []).length ? '<div class="sub" style="margin-top:10px">本地工具使用：' +
+    (d.tools || []).slice(0, 6).map((x) => x.tool + '×' + x.n).join('、') + '</div>' : '';
+  $('#taskList').innerHTML = statsHtml + (curTasks.map((t) => `<div class="item" data-task="${t.id}"><div class="t"><b>${esc(cleanTitle(t.title))}</b><span>${fmtTime(t.created_at)}</span></div><span class="badge ${t.status === 'done' ? 'ok' : 'run'}">${esc(t.status)}</span></div>`).join('') || '<div class="sub">还没有任务</div>') + toolsHtml;
   $$('[data-task]').forEach((el) => el.onclick = () => showTask(el.dataset.task));
+}
+function cleanTitle(t) {
+  return String(t || '').replace('（飞书消息 · 回复直接发回飞书 · 简短口语化）', '').trim().slice(0, 60);
 }
 function showTask(id) {
   const t = curTasks.find((x) => x.id === id); if (!t) return;
@@ -254,6 +320,7 @@ function bindModal() {
 
 // ── 对话 ────────────────────────────────────────────────
 let chatMsgs = [];
+let attachments = [];  // 本轮对话附带的本地文件
 
 // ── 会话管理（多会话，持久化到 localStorage）────────────────
 const SESS_KEY = 'lishi.sessions.v1';
@@ -265,7 +332,10 @@ function loadSessions() {
   if (!sessions.length) sessions.push(newSessionObj('新会话'));
   curSession = sessions[0].id;
 }
-function newSessionObj(title) { return { id: 's' + Date.now().toString(36), title: title || '新会话', msgs: [], createdAt: new Date().toISOString() }; }
+function newSessionObj(title) {
+  const rid = (crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8));
+  return { id: 's-' + rid, title: title || '新会话', msgs: [], createdAt: new Date().toISOString() };
+}
 function saveSessions() { try { localStorage.setItem(SESS_KEY, JSON.stringify(sessions)); } catch {} }
 function getSession() { return sessions.find((s) => s.id === curSession) || sessions[0]; }
 function renderSessions() {
@@ -299,8 +369,28 @@ function renderSessions() {
 function renderChat() {
   const s = getSession(); if (!s) return;
   const box = $('#chatBody');
-  box.innerHTML = (s.msgs || []).map((m) => `<div class="msg ${m.role}">${esc(m.text)}${m.meta ? `<span class="meta">${esc(m.meta)}</span>` : ''}</div>`).join('');
+  box.innerHTML = (s.msgs || []).map((m, i) => `<div class="msg ${m.role}">${esc(m.text)}${m.role === 'ai' ? `<span class="meta"><button class="mini" data-save="${i}">保存到项目</button>${m.meta ? ' · ' + esc(m.meta) : ''}</span>` : (m.role === 'sys' ? `data-file="${esc(m.file || '')}" data-out="${i}" style="cursor:pointer" title="点开看内容/输出"` : (m.meta ? `<span class="meta">${esc(m.meta)}</span>` : ''))}</div>`).join('');
   if (!s.msgs || !s.msgs.length) box.innerHTML = '<div class="msg ai">你好，我是团队 AI 助理。<br>直接说你要做什么——比如「把项目里的报价单整理成表」，我会在你本地文件夹里读写文件。</div>';
+  box.querySelectorAll('[data-file]').forEach((el) => {
+    el.onclick = () => {
+      const f = el.dataset.file;
+      if (f) return previewFile(f, el.textContent.replace(/^[✅❌]\s*/, ''));
+      const idx = parseInt(el.dataset.out || '-1', 10);
+      const m = idx >= 0 ? (s.msgs || [])[idx] : null;
+      if (m && m.out) showText(el.textContent, m.out);
+    };
+  });
+  box.querySelectorAll('[data-save]').forEach((el) => {
+    el.onclick = async () => {
+      const idx = parseInt(el.dataset.save, 10);
+      const msg = (s.msgs || [])[idx]; if (!msg) return;
+      const proj = (SNAP?.cfg?.projects || []).find((x) => x.id === ($('#chatProject') || {}).value);
+      if (!proj) { toast('先选一个项目'); return; }
+      const name = (s.title || '对话') + '-' + new Date().toISOString().slice(0, 10) + '.md';
+      const r = await api.saveOutput({ dir: proj.dir, name, content: msg.text });
+      toast(r && r.ok ? '已保存到 产出/' + name : '保存失败');
+    };
+  });
   box.scrollTop = box.scrollHeight;
   renderSessions();
 }
@@ -308,8 +398,9 @@ async function sendChat() {
   const inp = $('#chatInput');
   const text = (inp.value || '').trim();
   if (!text) return;
+  const s = getSession();          // 锁定本次发送所属会话
+  const sid = s.id;
   inp.value = '';
-  const s = getSession();
   if (!s.msgs || !s.msgs.length) s.title = text.slice(0, 18);
   s.msgs.push({ role: 'user', text });
   saveSessions();
@@ -317,25 +408,54 @@ async function sendChat() {
   const box = $('#chatBody');
   const tip = document.createElement('div');
   tip.className = 'typing'; tip.textContent = '助理思考中…'; box.appendChild(tip); box.scrollTop = box.scrollHeight;
-  const r = await api.chat(text, s.id);
+  const proj = $('#chatProject') ? $('#chatProject').value : '';
+  const r = await api.chat(text, sid, attachments.slice(), proj);
+  attachments = []; renderAttach();
   tip.remove();
-  const sess = getSession();
-  if (r && r.ok) sess.msgs.push({ role: 'ai', text: r.data.reply || '(空)', meta: (r.data.elapsed_ms || 0) + 'ms' });
-  else sess.msgs.push({ role: 'ai', text: '出错了：' + JSON.stringify((r && r.data) || {}).slice(0, 200) });
+  // 只写回发起这条消息的会话（即使中途切走了）
+  if (r && r.ok) s.msgs.push({ role: 'ai', text: r.data.reply || '(空)', meta: (r.data.elapsed_ms || 0) + 'ms' });
+  else s.msgs.push({ role: 'ai', text: '出错了：' + JSON.stringify((r && r.data) || {}).slice(0, 200) });
   saveSessions();
   renderChat();
+}
+function renderAttach() {
+  const box = $('#chatAttach'); if (!box) return;
+  box.innerHTML = attachments.map((f, i) => `<span class="chip">📎 <b>${esc(f.name)}</b><span data-rm="${i}">✕</span></span>`).join('');
+  box.querySelectorAll('[data-rm]').forEach((el) => { el.onclick = () => { attachments.splice(parseInt(el.dataset.rm, 10), 1); renderAttach(); }; });
 }
 function bindChat() {
   if (!sessions.length) loadSessions();
   const nb = $('#btnNewChat');
   if (nb && !nb._bound) {
     nb._bound = true;
-    nb.onclick = () => { sessions.unshift(newSessionObj('新会话')); curSession = sessions[0].id; saveSessions(); renderSessions(); renderChat(); };
+    nb.onclick = () => { sessions.unshift(newSessionObj('新会话')); curSession = sessions[0].id; saveSessions(); renderSessions(); renderChat(); const i = $('#chatInput'); if (i) i.focus(); };
   }
   const sel = $('#chatProject');
   const cfg = SNAP?.cfg || {};
   sel.innerHTML = (cfg.projects || []).map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('') || '<option value="">（先添加项目）</option>';
   $('#chatSend').onclick = sendChat;
+  const ba = $('#btnAttach');
+  if (ba && !ba._bound) {
+    ba._bound = true;
+    ba.onclick = async () => {
+      const p = (SNAP?.cfg?.projects || []).find((x) => x.id === ($('#chatProject') || {}).value);
+      if (!p) { toast('先添加一个项目'); return; }
+      const rf = await api.listTextFiles({ dir: p.dir });
+      const items = (rf && rf.items) || [];
+      if (!items.length) { toast('这个项目里没有可附带的文本文件'); return; }
+      const names = items.map((f) => f.name);
+      askName('附带哪个文件？（输入序号）', '1', (v) => {
+        const idx = parseInt(v, 10) - 1;
+        const f = items[idx];
+        if (!f) { toast('序号不对'); return; }
+        attachments.push({ name: f.name, path: f.path });
+        renderAttach();
+        toast('已附带：' + f.name + '（可选 ' + names.length + ' 个：' + names.slice(0, 5).join('、') + '）');
+      });
+      toast('可附带文件：' + names.slice(0, 6).join('、'));
+    };
+  }
+  renderAttach();
   $('#chatInput').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
   });
@@ -344,6 +464,8 @@ function bindChat() {
 function bind() {
   bindModal();
   bindNameModal();
+  bindBriefModal();
+  bindPreviewModal();
   bindChat();
   $$('.nav-item').forEach((b) => b.onclick = () => go(b.dataset.view));
   $$('[data-view]').forEach((b) => { if (b.classList.contains('link') || b.tagName === 'BUTTON' && !b.classList.contains('nav-item')) b.onclick = () => go(b.dataset.view); });
@@ -379,6 +501,19 @@ function bind() {
   };
   $('#btnSyncSkills').onclick = async () => { await api.heartbeat(); await loadSkills(); toast('技能已同步'); };
   $('#btnRunLocal').onclick = () => toast('本地执行：下一步接执行器');
+  api.onTool && api.onTool((d) => {
+    const s = getSession();
+    if (!s || !s.msgs) return;
+    const map = {
+      local_list_dir: '📂 浏览目录', local_read_file: '📄 读取文件',
+      local_write_file: '✍️ 写入文件', local_run_cmd: '⌨️ 执行命令',
+    };
+    const label = (map[d.tool] || d.tool) + (d.argsText ? ' · ' + String(d.argsText).split(/[\\/]/).pop() : '') + (d.ms != null ? ' · ' + d.ms + 'ms' : '');
+    s.msgs.push({ role: 'sys', text: (d.ok ? '✅ ' : '❌ ') + label,
+                  file: (d.tool === 'local_read_file' || d.tool === 'local_write_file') ? d.path : '',
+                  out: d.outputPreview || '' });
+    saveSessions(); renderChat();
+  });
   api.onState && api.onState((d) => { SNAP = d; renderConn(); renderHome(); renderProjects(); });
   api.onLog && api.onLog((rec) => { if (SNAP?.state) { SNAP.state.log.unshift(rec); renderHome(); } });
   api.onGoto && api.onGoto((v) => go(v));

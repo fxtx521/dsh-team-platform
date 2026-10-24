@@ -383,6 +383,63 @@ async def approve_experience(exp_id: str, request: Request):
     audit("admin", "experience.approve", exp_id, name)
     return {"ok": True, "skill_id": sid, "name": name}
 
+@app.post("/v1/skills/dedupe")
+async def dedupe_skills(request: Request):
+    """技能去重：规范化名称后同名合并，保留内容最长的一条。"""
+    require_admin(request)
+    import re as _re
+    def norm(n):
+        n = n or ""
+        for p in ("经验 · ", "经验:", " · 可固化", "（v2）", "(v2)"):
+            n = n.replace(p, "")
+        return _re.sub(r"\s+", "", n).lower()
+    c = conn()
+    rows = c.execute("SELECT id, name, content, version FROM skills ORDER BY length(content) DESC").fetchall()
+    keep, removed = {}, 0
+    for r in rows:
+        k = norm(r["name"])
+        if k in keep:
+            c.execute("DELETE FROM skills WHERE id=?", (r["id"],))
+            removed += 1
+        else:
+            keep[k] = r["id"]
+    c.commit()
+    total = c.execute("SELECT count(*) n FROM skills").fetchone()["n"]
+    c.close()
+    audit("admin", "skills.dedupe", str(removed), f"left={total}")
+    return {"ok": True, "removed": removed, "left": total}
+
+@app.post("/v1/experience/batch-approve")
+async def batch_approve(request: Request):
+    """批量审核：低风险经验自动入库成技能，敏感类留人工。"""
+    require_admin(request)
+    body = await request.json() if request.headers.get("content-type","").startswith("application/json") else {}
+    limit = int(body.get("limit") or 200)
+    sensitive = ["客户名称", "身份证", "银行卡", "工资", "报价金额", "合同金额", "密码", "法人"]
+    c = conn()
+    rows = c.execute("SELECT * FROM experiences WHERE status='pending' ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
+    approved, kept = 0, 0
+    for e in rows:
+        blob = (e["title"] or "") + (e["content"] or "")
+        if any(k in blob for k in sensitive):
+            kept += 1
+            continue
+        name = ("经验 · " + (e["title"] or "未命名"))[:60]
+        content = e["content"] or ""
+        sk = c.execute("SELECT id, version FROM skills WHERE name=?", (name,)).fetchone()
+        if sk:
+            c.execute("UPDATE skills SET content=?, version=?, updated_at=? WHERE id=?", (content, int(sk["version"]) + 1, now(), sk["id"]))
+            sid = sk["id"]
+        else:
+            sid = uuid.uuid4().hex
+            c.execute("INSERT INTO skills(id,name,type,version,content,updated_at) VALUES(?,?,?,?,?,?)",
+                      (sid, name, "sop", 1, content, now()))
+        c.execute("UPDATE experiences SET status='approved', skill_id=? WHERE id=?", (sid, e["id"]))
+        approved += 1
+    c.commit(); c.close()
+    audit("admin", "experience.batch_approve", str(approved), f"kept={kept}")
+    return {"ok": True, "approved": approved, "kept_for_review": kept}
+
 @app.get("/v1/skills/stats")
 async def skill_stats(request: Request):
     require_admin(request)
@@ -704,6 +761,115 @@ def thread_for_session(session_id: str) -> str:
             c.close()
     return tid
 
+
+# ── 自动沉淀：后台定时提炼 + 对话时技能召回注入 ──────────
+def _distill_once(hours: int = 24) -> int:
+    import datetime as _dt
+    since = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(hours=hours)).isoformat()
+    c = conn()
+    try:
+        tasks = c.execute("""SELECT * FROM tasks WHERE status='done' AND created_at>=?
+                             ORDER BY created_at DESC LIMIT 50""", (since,)).fetchall()
+        n = 0
+        for t in tasks:
+            if c.execute("SELECT id FROM experiences WHERE task_id=?", (t["id"],)).fetchone():
+                continue
+            title = (t["title"] or "")
+            summary = (t["summary"] or "")
+            # 清掉飞书桥前缀等噪音
+            for p in ("（飞书消息 · 回复直接发回飞书 · 简短口语化）", "(飞书消息)", "【砺的长期记忆召回"):
+                title = title.replace(p, "")
+            title = title.strip()[:60]
+            if not title or title.startswith("命中"):
+                continue
+            # 质量过滤：测试类、过短、无实质结论的不要
+            if any(k in title for k in ("测试", "负载", "loadtest", "一句话")):
+                continue
+            if len(summary) < 40:
+                continue
+            steps = c.execute("SELECT tool, duration_ms, ok FROM task_steps WHERE task_id=? ORDER BY seq", (t["id"],)).fetchall()
+            step_txt = "、".join(f'{s["tool"]}({s["duration_ms"]}ms)' for s in steps)
+            content = ("适用场景：" + (t["title"] or "") + "\n"
+                       "执行链路：" + (step_txt or "无步骤记录") + "\n"
+                       "产出要点：" + ((t["summary"] or "")[:600] or "无摘要"))
+            c.execute("""INSERT INTO experiences(id,task_id,title,kind,content,status,created_at)
+                         VALUES(?,?,?,?,?,?,?)""",
+                      (uuid.uuid4().hex, t["id"], (t["title"] or "经验") + " · 可固化", "sop", content, "pending", now()))
+            n += 1
+        c.commit()
+        return n
+    finally:
+        c.close()
+
+def recall_skills(text: str, limit: int = 3) -> str:
+    """按问题关键词，从技能库召回最相关经验，拼成提示词片段。"""
+    text = (text or "").lower()
+    if not text:
+        return ""
+    c = conn()
+    rows = c.execute("SELECT name, content FROM skills").fetchall()
+    c.close()
+    def grams(s):
+        s = "".join(ch for ch in (s or "") if ch.strip())
+        return {s[i:i+2] for i in range(max(0, len(s) - 1))}
+    tg = grams(text)
+    scored = []
+    for r in rows:
+        name, content = r["name"] or "", r["content"] or ""
+        score = 0
+        if name and name[:6] in text:
+            score += 8
+        sg = grams(name + content[:300])
+        score += len(tg & sg)
+        if score > 1:
+            scored.append((score, name, content))
+    scored.sort(reverse=True)
+    top = scored[:limit]
+    if not top:
+        return ""
+    out = "【公司已有经验/技能（优先遵循）】\n"
+    for sc, name, content in top:
+        out += f"- {name}：{content[:400]}\n"
+    return out
+
+@app.on_event("startup")
+async def _startup_bg():
+    async def loop():
+        await _asyncio.sleep(60)
+        while True:
+            try:
+                n = await _asyncio.to_thread(_distill_once, 24)
+                if n:
+                    print("auto distill:", n)
+            except Exception as e:
+                print("auto distill failed:", e)
+            await _asyncio.sleep(1800)
+    _asyncio.create_task(loop())
+
+@app.get("/v1/my/summary")
+async def my_summary(x_api_key: Optional[str] = Header(None)):
+    """员工端看自己的数据：任务、步骤、技能、经验统计。"""
+    t = auth(x_api_key)
+    c = conn()
+    tasks = c.execute("""SELECT id, title, status, created_at, summary FROM tasks
+                         WHERE terminal_id=? ORDER BY created_at DESC LIMIT 30""", (t["id"],)).fetchall()
+    total = c.execute("SELECT count(*) n FROM tasks WHERE terminal_id=?", (t["id"],)).fetchone()["n"]
+    today = datetime.now(timezone.utc).date().isoformat()
+    today_n = c.execute("SELECT count(*) n FROM tasks WHERE terminal_id=? AND date(created_at)=?",
+                        (t["id"], today)).fetchone()["n"]
+    steps = c.execute("""SELECT s.tool, count(*) n, ROUND(AVG(s.duration_ms)) avg_ms, SUM(s.ok) ok_n
+                         FROM task_steps s JOIN tasks t2 ON t2.id = s.task_id
+                         WHERE t2.terminal_id=? GROUP BY s.tool ORDER BY n DESC LIMIT 10""", (t["id"],)).fetchall()
+    skills_n = c.execute("SELECT count(*) n FROM skills").fetchone()["n"]
+    exp_n = c.execute("SELECT count(*) n FROM experiences").fetchone()["n"]
+    exp_pending = c.execute("SELECT count(*) n FROM experiences WHERE status='pending'").fetchone()["n"]
+    c.close()
+    return {"ok": True, "who": t["user_name"],
+            "stats": {"total_tasks": total, "today_tasks": today_n, "skills": skills_n,
+                      "experiences": exp_n, "pending_experience": exp_pending},
+            "tasks": [dict(r) for r in tasks],
+            "tools": [dict(s) for s in steps]}
+
 @app.post("/v1/chat")
 async def chat_with_assistant(request: Request, x_api_key: Optional[str] = Header(None)):
     """客户端聊天：员工终端 Key 直接和云端助理对话（不建任务，轻量）。"""
@@ -718,7 +884,26 @@ async def chat_with_assistant(request: Request, x_api_key: Optional[str] = Heade
         raise HTTPException(400, "message required")
     sid = str(b.get("session_id") or "")
     tid = await _asyncio.to_thread(thread_for_session, sid) if sid else ""
-    res = await _asyncio.to_thread(octop_chat, msg, "", 240, "", tid)
+    ctx = ""
+    try:
+        ctx = await _asyncio.to_thread(recall_skills, msg, 3)
+    except Exception:
+        ctx = ""
+    files = b.get("files") or []
+    file_block = ""
+    for f in files[:8]:
+        fname = os.path.basename(str(f.get("name") or "file"))
+        content = str(f.get("content") or "")[:12000]
+        if content:
+            file_block += f"\n--- 文件：{fname} ---\n{content}\n"
+    parts = []
+    if ctx:
+        parts.append(ctx)
+    if file_block:
+        parts.append("【本地文件内容（由客户端读取）】" + file_block)
+    parts.append("【用户问题】\n" + msg)
+    final_msg = "\n\n".join(parts)
+    res = await _asyncio.to_thread(octop_chat, final_msg, "", 240, "", tid)
     return {"ok": res["ok"], "reply": res["reply"], "elapsed_ms": res["elapsed_ms"], "error": res.get("error", ""),
             "who": (terminal["user_name"] if terminal else "admin")}
 

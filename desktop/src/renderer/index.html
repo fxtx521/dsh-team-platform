@@ -57,7 +57,9 @@
           <select id="chatProject" class="chat-proj"></select>
         </div>
         <div class="chat-body" id="chatBody"></div>
+        <div class="chat-attach" id="chatAttach"></div>
         <div class="chat-in">
+          <button class="btn ghost" id="btnAttach" title="附带项目里的文件">📎</button>
           <textarea id="chatInput" rows="2" placeholder="例如：把 D 盘这个项目里的报价单整理成一张表（Enter 发送，Shift+Enter 换行）"></textarea>
           <button class="btn primary" id="chatSend">发送</button>
         </div>
@@ -159,6 +161,25 @@
     </section>
   </main>
 </div>
+<div class="modal-mask" id="previewModal">
+  <div class="modal" style="width:720px">
+    <div class="modal-h"><h3 id="pvTitle">文件预览</h3><button class="modal-x" id="pvClose">✕</button></div>
+    <div class="modal-b"><pre id="pvBody" style="white-space:pre-wrap;font-size:12.5px;line-height:1.6;max-height:60vh;overflow:auto;background:#fbfcfe;border:1px solid #e9ecf2;border-radius:10px;padding:12px">（空）</pre></div>
+    <div class="modal-f"><button class="btn ghost" id="pvReveal">在文件夹中显示</button><button class="btn primary" id="pvOk">关闭</button></div>
+  </div>
+</div>
+
+<div class="modal-mask" id="briefModal">
+  <div class="modal" style="width:560px">
+    <div class="modal-h"><h3 id="brTitle">项目简报</h3><button class="modal-x" id="brClose">✕</button></div>
+    <div class="modal-b">
+      <p class="sub" style="margin-bottom:8px">写清这个项目的背景、客户口径、禁做事项、常用模板。对话时会自动带给助理（相当于项目记忆）。</p>
+      <textarea id="brText" style="width:100%;min-height:260px;border:1px solid #e9ecf2;border-radius:11px;padding:12px;font-size:13px;font-family:inherit;outline:none;resize:vertical"></textarea>
+    </div>
+    <div class="modal-f"><button class="btn ghost" id="brCancel">取消</button><button class="btn primary" id="brOk">保存</button></div>
+  </div>
+</div>
+
 <div class="modal-mask" id="nameModal">
   <div class="modal" style="width:420px">
     <div class="modal-h"><h3 id="nmTitle">起个名字</h3><button class="modal-x" id="nmClose">✕</button></div>
