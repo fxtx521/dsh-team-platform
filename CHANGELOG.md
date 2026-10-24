@@ -5,6 +5,28 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ---
 
+## [0.32.0] - 2026-10-24
+
+### 中文
+
+**窗口缩放不再遮挡（响应式布局）**
+- 1240px 以下：会话栏与上下文栏收窄；1080px 以下：右侧上下文面板自动隐藏（保留对话与文件面板主要功能）
+- 980px 以下：左侧导航变图标栏、隐藏快捷开始与员工信息，避免文字竖排/挤压
+- 对话区高度随窗口自适应（修掉输入框被顶出视口的问题）
+- 长文本自动换行（消息、卡片、文件名），不再溢出遮挡
+- 已按 980×640 / 1100×760 / 1240×800 / 1400×900 四档截图验证
+
+### English
+
+**No more overlap when resizing (responsive layout)**
+- Below 1240px the session and context columns narrow; below 1080px the right context panel hides automatically
+- Below 980px the sidebar collapses to icons and quick-start/employee info hide to avoid vertical text
+- The chat area height adapts to the window (fixes the input being pushed out of view)
+- Long text wraps (messages, cards, file names) instead of overflowing
+- Verified with screenshots at 980x640 / 1100x760 / 1240x800 / 1400x900
+
+---
+
 ## [0.31.0] - 2026-10-24
 
 ### 中文

@@ -220,3 +220,54 @@ select{width:100%;border:1px solid var(--line);border-radius:11px;padding:10px 1
 .chat-head .chat-proj{max-width:170px}
 .chat-head .btn{white-space:nowrap}
 
+
+/* ── 响应式：窗口缩放时不遮挡、不挤压 ─────────────────── */
+.app{min-width:0}
+.topbar{flex-wrap:wrap;gap:8px}
+.card-h{flex-wrap:wrap;gap:8px}
+.chat-head{flex-wrap:wrap;row-gap:8px}
+.sidebar{overflow-y:auto}
+.view{overflow:auto;min-width:0}
+.msg,.item .t b,.item .t span,.expert-card b,.expert-card span,.file span{overflow-wrap:anywhere;word-break:break-word}
+.chat-in{flex-wrap:nowrap}
+@media (max-width:1240px){
+  .chat-layout{grid-template-columns:200px minmax(0,1fr) 240px}
+  .sidebar{width:200px;flex:0 0 200px}
+}
+@media (max-width:1080px){
+  .chat-layout{grid-template-columns:180px minmax(0,1fr)}
+  .chat-context{display:none}
+}
+@media (max-width:980px){
+  .sidebar{width:64px;flex:0 0 64px;padding:16px 8px}
+  .brand-text{display:none}
+  .nav-item span:not(.ico){display:none}
+  .nav-item{justify-content:center}
+  .quick-start{display:none}
+  .chat-layout{grid-template-columns:150px minmax(0,1fr)}
+}
+
+
+/* 修复：窄窗口下导航文字竖排 + 对话区高度溢出 */
+@media (max-width:980px){
+  .nav-item{font-size:0}
+  .nav-item .ico{font-size:17px}
+}
+#view-chat{display:flex;flex-direction:column;min-height:0}
+#view-chat.active{height:calc(100vh - 92px)}
+#view-chat .chat-card{flex:1;min-height:0;overflow:hidden}
+#view-chat .chat-layout{height:100%;min-height:0}
+
+
+@media (max-width:980px){
+  .side-sec-t,.side-quick{display:none}
+  .side-sec{padding:0}
+  .conn span{display:none}
+}
+
+
+@media (max-width:980px){
+  #whoBox,.side-foot .ver{display:none}
+  .side-foot{padding-left:0;padding-right:0;text-align:center}
+}
+
