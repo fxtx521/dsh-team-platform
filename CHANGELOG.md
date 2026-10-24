@@ -5,6 +5,32 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ---
 
+## [0.16.0] - 2026-10-24
+
+### 中文
+
+**修复：切换专家后「不知道自己是谁」**
+- 根因：从专家模板新建的助理，名字正确但 **system_prompt 为空**、default_model 也为空，导致它把自己当无名新助理。
+- 现在选专家（首次使用）时自动：创建/复用助理 → 写入身份提示词（专家名 + 专家描述 + 回答要求）→ 补默认模型 → 缓存映射。
+- 启动时对已有助理全量修复（补身份提示词与模型），不覆盖用户已自定义的提示词。
+
+**验证**
+- 设计专家：回复「我是 Octop 里的设计专家，专做设计评审、设计系统、UX 文案…」
+- 多专家协作编排：回复「我是「多专家协作编排师」——把你的目标拆成有依赖关系的步骤…」
+
+### English
+
+**Fixed: expert agents "forgot who they are" after switching experts**
+- Root cause: agents created from expert templates had the right name but an **empty system_prompt** and empty default_model, so they behaved like unnamed new agents.
+- On first use of an expert the client now creates/reuses the agent, writes an identity prompt (expert name + description + answer rules), fills the default model, and caches the mapping.
+- A startup sweep repairs existing agents (identity + model) without overwriting user-customised prompts.
+
+**Verified**
+- Design expert replies "I am Octop's design expert, covering design reviews, design systems, UX copy…".
+- Multi-agent orchestrator replies with its orchestration role.
+
+---
+
 ## [0.15.1] - 2026-10-24
 
 ### 中文

@@ -598,13 +598,53 @@ async function ensureAgentModel(agentId, model) {
   return r.ok;
 }
 
+
+async function octopExperts() {
+  const r = await octopFetch("GET", "/api/experts");
+  return (r.ok && Array.isArray(r.data)) ? r.data : [];
+}
+
+function expertName(e) {
+  const lb = (e && e.label) || {};
+  if (typeof lb === "string") return lb;
+  return lb.zh || lb.en || (e && e.id) || "";
+}
+
+function expertDesc(e) {
+  const d = e && e.description;
+  if (!d) return "";
+  if (typeof d === "string") return d;
+  return d.zh || d.en || "";
+}
+
+async function ensureAgentProfile(agent, expert) {
+  if (!agent || !expert) return;
+  const body = {};
+  const name = expertName(expert);
+  if (name && agent.name !== name) body.name = name;
+  if (!agent.default_model) body.default_model = activeModelOf(await octopAgents());
+  const desc = expertDesc(expert);
+  if (!(agent.system_prompt || "").trim() && desc.trim()) {
+    body.system_prompt =
+      "你是「" + name + "」。" + desc + "\n" +
+      "回答要求：先给结论，再给步骤；简洁专业；使用中文；不确定时说明依据。";
+    body.description = desc;
+  }
+  if (!Object.keys(body).length) return;
+  const r = await octopFetch("PATCH", "/api/agents/" + agent.agent_id, body);
+  if (r.ok) log("已配置专家助理: " + agent.agent_id + " (" + name + ")");
+}
+
 async function resolveExpertAgent(expertId) {
   const cfg = readCfg();
   const cache = cfg.expertAgents || {};
   if (cache[expertId]) return cache[expertId];
   let agents = await octopAgents();
-  const model = activeModelOf(agents);
-  let hit = agents.find((a) => a.expert_id === expertId);
+  const experts = await octopExperts();
+  const expert = experts.find((e) => e.id === expertId);
+  const ename = expertName(expert);
+  let hit = agents.find((a) => a.expert_id === expertId) ||
+            (ename ? agents.find((a) => a.name === ename) : null);
   if (!hit) {
     const r = await octopFetch("POST", "/api/agents/from-expert/" + encodeURIComponent(expertId), {});
     if (!r.ok) { log("创建专家助理失败: " + expertId); return ""; }
@@ -613,9 +653,18 @@ async function resolveExpertAgent(expertId) {
   }
   const aid = hit && hit.agent_id;
   if (!aid) return "";
-  if (!hit.default_model) await ensureAgentModel(aid, model);
+  await ensureAgentProfile(hit, expert);
   writeCfg({ ...readCfg(), expertAgents: Object.assign({}, cache, { [expertId]: aid }) });
   return aid;
+}
+
+async function repairExpertAgents() {
+  const agents = await octopAgents();
+  const experts = await octopExperts();
+  for (const a of agents) {
+    const ex = experts.find((e) => expertName(e) === a.name);
+    if (ex) await ensureAgentProfile(a, ex);
+  }
 }
 
 async function repairAllAgentModels() {
@@ -779,6 +828,7 @@ app.whenReady().then(() => {
   setInterval(heartbeat, 60 * 1000);
   setTimeout(async () => { try { await ensureOctopAgent(); } catch {} }, 4000);
   setTimeout(async () => { try { await repairAllAgentModels(); } catch (e) { log('修复模型失败: ' + e.message); } }, 6000);
+  setTimeout(async () => { try { await repairExpertAgents(); } catch (e) { log('修复专家身份失败: ' + e.message); } }, 8000);
   setTimeout(startPoller, 2500);
   try { startMcpServer(); } catch (e) { log('MCP 启动异常: ' + e.message); }
   app.on('activate', () => { if (!win) createWindow(); else win.show(); });
