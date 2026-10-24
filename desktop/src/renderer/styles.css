@@ -47,6 +47,7 @@ input{font-family:inherit}
 .link{color:var(--brand-ink);font-size:12.5px;font-weight:600}
 .view{display:none;padding:22px 26px 30px;overflow-y:auto;flex:1}
 .view.active{display:block}
+#view-chat.active{display:flex!important}
 .hero{background:linear-gradient(120deg,#fff 0%,#fff7f1 60%,#ffe9d8 100%);border:1px solid #ffe3cf;border-radius:20px;padding:26px 28px;display:flex;justify-content:space-between;gap:24px;align-items:center;box-shadow:var(--shadow)}
 .hero h1{font-size:23px;letter-spacing:-.4px}
 .hero p{color:var(--muted);font-size:13px;margin-top:7px}
@@ -253,8 +254,7 @@ select{width:100%;border:1px solid var(--line);border-radius:11px;padding:10px 1
   .nav-item{font-size:0}
   .nav-item .ico{font-size:17px}
 }
-#view-chat{display:flex;flex-direction:column;min-height:0}
-#view-chat.active{height:calc(100vh - 92px)}
+#view-chat.active{display:flex!important;flex-direction:column;height:calc(100vh - 92px)}
 #view-chat .chat-card{flex:1;min-height:0;overflow:hidden}
 #view-chat .chat-layout{height:100%;min-height:0}
 
@@ -270,4 +270,13 @@ select{width:100%;border:1px solid var(--line);border-radius:11px;padding:10px 1
   #whoBox,.side-foot .ver{display:none}
   .side-foot{padding-left:0;padding-right:0;text-align:center}
 }
+
+
+/* 高级设置可折叠 */
+.adv{margin:6px 0 16px}
+.adv>summary{cursor:pointer;padding:10px 14px;border:1px dashed #dfe3ea;border-radius:12px;font-size:13px;color:#4b5563;background:#fbfcfe;list-style:none}
+.adv>summary::-webkit-details-marker{display:none}
+.adv>summary:before{content:"▸ ";color:#9aa2af}
+.adv[open]>summary:before{content:"▾ "}
+.adv[open]>summary{border-bottom-left-radius:0;border-bottom-right-radius:0}
 

@@ -479,6 +479,19 @@ function loadCapabilitiesWith(c) {
     toast(r && r.ok ? ('已切换模型: ' + model) : '切换失败');
     loadCapabilities();
   };
+  const kbBtn = $('#btnKbPick');
+  if (kbBtn) kbBtn.onclick = async () => {
+    const r = await api.octopKbList();
+    const items = (r && r.items) || [];
+    if (!items.length) { toast('还没有知识库，先去「知识库」页建一个'); return; }
+    const list = items.map((k, i) => (i + 1) + '. ' + k.name).join('\n');
+    askName('选知识库（序号，可逗号多选）\n' + list, '1', async (v) => {
+      const ids = String(v || '').split(/[,，\s]+/).filter(Boolean).map((x) => items[parseInt(x, 10) - 1]).filter(Boolean).map((k) => k.id);
+      pickedKbs = ids;
+      const el = $('#kbCount'); if (el) el.textContent = String(ids.length);
+      toast(ids.length ? ('已引用 ' + ids.length + ' 个知识库') : '未选择');
+    });
+  };
   const bi = $('#btnBrowserInstall');
   if (bi) bi.onclick = async () => {
     bi.textContent = '安装中…（几分钟）';
@@ -750,6 +763,7 @@ function bindModal() {
 let chatMsgs = [];
 let attachments = [];  // 本轮对话附带的本地文件
 let pickedSkills = [];   // 本轮对话启用的技能
+let pickedKbs = [];      // 本轮对话引用的知识库
 
 // ── 会话管理（多会话，持久化到 localStorage）────────────────
 const SESS_KEY = 'lishi.sessions.v1';
@@ -884,7 +898,7 @@ async function sendChat() {
   const expert = $('#chatExpert') ? $('#chatExpert').value : '';
   let r;
   if (api.octopChat) {
-    const res = await api.octopChat({ text, sessionId: sid, agentId: expert || undefined, skills: pickedSkills.slice() });
+    const res = await api.octopChat({ text, sessionId: sid, agentId: expert || undefined, skills: pickedSkills.slice(), kbIds: pickedKbs.slice() });
     r = res && res.ok ? { ok: true, data: { reply: res.reply, elapsed_ms: res.elapsed_ms } } : { ok: false, data: { error: (res && res.error) || '对话失败' } };
   } else {
     r = await api.chat(text, sid, attachments.slice(), proj, expert);

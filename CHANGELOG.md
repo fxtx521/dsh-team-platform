@@ -5,6 +5,32 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ---
 
+## [0.33.0] - 2026-10-24
+
+### 中文
+
+**对话可直接引用知识库（实测）**
+- 对话头部新增「知识库 N」按钮：选一个/多个知识库，发送时随对话带上（字段 knowledge_base_ids）
+- **实测**：引用「团队知识库」提问「台账整理规范里日期格式怎么写」，助理答 `YYYY-MM-DD`（内容来自我们上传的文档）
+**设置页瘦身**
+- 「安全与权限」「本地 MCP」「诊断」「旧后台」收进「高级设置 / 诊断」折叠区，默认收起
+**修复**
+- 修掉一个后遗症：聊天视图被 CSS 强制常显，导致设置/知识库等页面顶部也出现对话面板；现在只在「对话」页显示
+- 每页用 1400×900 无头渲染截图复核，确认单页显示正常
+
+### English
+
+**Chat can reference knowledge bases (verified)**
+- New Knowledge bases N button in the chat header: pick one or more bases; they are sent with the turn (knowledge_base_ids)
+- Verified: referencing the Team KB and asking about the ledger date format returned YYYY-MM-DD from the uploaded document
+**Settings slimmed**
+- Security, local MCP, diagnostics and legacy backend moved into a collapsed Advanced section
+**Fixed**
+- Regression fix: the chat view was forced visible by CSS and appeared on every page; now only on the Chat page
+- Each page re-checked with 1400x900 headless screenshots
+
+---
+
 ## [0.32.0] - 2026-10-24
 
 ### 中文

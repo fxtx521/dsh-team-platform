@@ -60,6 +60,7 @@
           <div style="display:flex;gap:8px;align-items:center">
             <span class="selwrap"><b>专家</b><select id="chatExpert" class="chat-proj" title="选择专家"></select></span>
             <button class="btn ghost" id="btnSkills">技能 <span id="skillCount">0</span></button>
+            <button class="btn ghost" id="btnKbPick" title="选择知识库作为上下文">知识库 <span id="kbCount">0</span></button>
             <select id="chatProject" class="chat-proj" title="选择项目"></select>
           </div>
         </div>
@@ -203,6 +204,8 @@
         <button class="btn primary" id="btnSaveOctop">保存</button>
         <button class="btn ghost" id="btnLogoutOctop" style="margin-left:8px">退出登录</button>
       </div>
+      <details class="adv">
+        <summary>高级设置 / 诊断（一般不用动）</summary>
       <div class="card">
         <div class="card-h"><h3>诊断</h3></div>
         <p class="sub" style="margin-bottom:10px">查看云端能力连接状态、用量、备份、插件等（原来那个"云端能力"页）。</p>
@@ -211,7 +214,7 @@
       <div class="card">
         <div class="card-h"><h3>旧后台（已停用，可留空）</h3></div>
         <label class="field"><span>服务器地址</span><input id="cfgServer" placeholder="http://127.0.0.1:8000" /></label>
-        <label class="field"><span>员工 Key</span><input id="cfgKey" placeholder="dsh_xxx（从平台终端管理复制）" /></label>
+        <label class="field"><span>员工 Key</span><input id="cfgKey" placeholder="dsh_xxx（可留空）" /></label>
         <label class="field"><span>员工姓名</span><input id="cfgName" placeholder="张三" /></label>
         <button class="btn primary" id="btnSaveConn">保存并测试连接</button>
       </div>
@@ -228,6 +231,7 @@
         <p style="margin:10px 0;font-size:13px">地址：<b id="mcpUrl">-</b></p>
         <label class="switch"><input type="checkbox" id="mcpOn" /><span>启用本地 MCP 服务</span></label>
       </div>
+      </details>
       <div class="card">
         <div class="card-h"><h3>关于</h3></div>
         <p class="sub">砺 · 工作台 v<span id="aboutVer">0.1.0</span> · 平台 <span id="aboutPlat">-</span></p>

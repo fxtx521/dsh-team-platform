@@ -1135,7 +1135,7 @@ async function repairAllAgentModels() {
   }
 }
 
-async function octopChat({ text, sessionId, agentId, skills }) {
+async function octopChat({ text, sessionId, agentId, skills, kbIds }) {
   const cfg = readCfg();
   const tk = cfg.octopToken;
   if (!tk) return { ok: false, error: "未登录 Octop" };
@@ -1160,6 +1160,7 @@ async function octopChat({ text, sessionId, agentId, skills }) {
     ws.on("open", () => {
       const frame = { type: "user_turn", text, thread_id: tid || undefined, session_key: "client:" + (sessionId || "default") };
       if (Array.isArray(skills) && skills.length) frame.skills = skills;
+      if (Array.isArray(kbIds) && kbIds.length) frame.knowledge_base_ids = kbIds;
       ws.send(JSON.stringify(frame));
     });
     ws.on("message", (buf) => {
