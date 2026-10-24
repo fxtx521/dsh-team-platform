@@ -107,8 +107,9 @@ function createTray() {
 // ── 云端通信 ──────────────────────────────────────────────
 async function api(method, p, body) {
   const cfg = readCfg();
-  return httpReq(method, cfg.serverUrl.replace(/\/$/, '') + p, body,
-    { 'Content-Type': 'application/json', 'X-API-Key': cfg.apiKey }, 20000);
+  const headers = { 'Content-Type': 'application/json', 'X-API-Key': cfg.apiKey };
+  if (cfg.token) headers['Authorization'] = 'Bearer ' + cfg.token;
+  return httpReq(method, cfg.serverUrl.replace(/\/$/, '') + p, body, headers, 20000);
 }
 
 async function heartbeat() {
@@ -340,7 +341,33 @@ ipcMain.handle('cloud:mySummary', async () => {
 });
 
 ipcMain.handle('cloud:me', async () => {
-  return await api('GET', '/v1/me');
+  return await api('GET', '/v1/auth/me');
+});
+
+ipcMain.handle('auth:login', async (_e, { username, password }) => {
+  const cfg = readCfg();
+  const base = cfg.serverUrl.replace(/\/$/, '');
+  const r = await httpReq('POST', base + '/v1/auth/login', { username, password }, { 'Content-Type': 'application/json' }, 20000);
+  if (!r.ok) return { ok: false, error: (r.data && (r.data.detail || r.data.error)) || '登录失败' };
+  const token = r.data.token;
+  writeCfg({ ...cfg, token, employeeName: (r.data.user && r.data.user.display_name) || username });
+  // 绑定本机为终端
+  const b = await httpReq('POST', base + '/v1/auth/bind-device', { hostname: os.hostname() },
+    { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }, 20000);
+  if (b.ok && b.data && b.data.api_key) {
+    writeCfg({ ...readCfg(), apiKey: b.data.api_key });
+    log('设备已绑定: ' + os.hostname());
+  }
+  log('登录成功: ' + username);
+  await heartbeat();
+  return { ok: true, user: r.data.user, permissions: r.data.permissions };
+});
+
+ipcMain.handle('auth:logout', async () => {
+  const cfg = readCfg();
+  writeCfg({ ...cfg, token: '' });
+  broadcast();
+  return { ok: true };
 });
 
 ipcMain.handle('cloud:expAction', async (_e, { id, action }) => {

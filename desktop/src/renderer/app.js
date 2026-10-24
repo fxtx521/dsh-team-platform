@@ -12,7 +12,7 @@ const MOCK = {
     { t: new Date().toISOString(), line: '已同步技能: 客户核查 SOP（v2）' },
     { t: new Date().toISOString(), line: '已写文件: ~/Documents/砺项目/鼎晟/核查报告.docx' },
   ] },
-  cfg: { serverUrl: 'http://8.140.227.88:18000', apiKey: 'demo-key-0001', employeeName: '演示员工', projectRoot: '~/Documents/砺项目',
+  cfg: { serverUrl: 'http://8.140.227.88:18000', apiKey: 'demo-key-0001', token: 'preview-token', employeeName: '演示员工', projectRoot: '~/Documents/砺项目',
          projects: [{ id: 'p1', name: '鼎晟机械核查', dir: '~/Documents/砺项目/鼎晟机械', createdAt: new Date().toISOString() },
                     { id: 'p2', name: '珍云官网 SEO', dir: '~/Documents/砺项目/珍云SEO', createdAt: new Date().toISOString() }],
          cmdWhitelist: ['python3', 'node', 'git'], allowCommand: false },
@@ -36,6 +36,8 @@ const api = window.wb || {
   reveal: async () => true,
   runCmd: async () => ({ ok: true, output: '（预览模式，未执行真实命令）' }),
   chat: async (m) => ({ ok: true, data: { reply: '（预览模式）收到：' + m, elapsed_ms: 3200 } }),
+  login: async () => ({ ok: true, user: { display_name: '演示员工' } }),
+  logout: async () => ({ ok: true }),
   me: async () => ({ ok: true, data: { user: { username: 'u1', display_name: '演示员工', role: 'reviewer', dept: '' }, terminal: { id: 't1', hostname: 'demo-pc', employee_no: 'ZY-0001' }, permissions: ['experience.approve', 'task.run', 'skill.sync'] } }),
   expAction: async () => ({ ok: true }),
   mySummary: async () => ({ ok: true, data: {
@@ -117,6 +119,34 @@ function bindBriefModal() {
     close();
     toast(r && r.ok ? '项目简报已保存' : '保存失败');
   };
+}
+
+function bindLogin() {
+  const doLogin = async () => {
+    const u = ($('#lgUser').value || '').trim();
+    const p = $('#lgPass').value || '';
+    $('#lgErr').textContent = '';
+    if (!u || !p) { $('#lgErr').textContent = '请输入账号和密码'; return; }
+    $('#lgOk').textContent = '登录中…';
+    const r = await api.login(u, p);
+    $('#lgOk').textContent = '登录';
+    if (r && r.ok) {
+      $('#loginModal').classList.remove('show');
+      await refresh();
+      await loadMe();
+      toast('欢迎，' + ((r.user && r.user.display_name) || u));
+      go('chat');
+    } else {
+      $('#lgErr').textContent = (r && r.error) || '登录失败';
+    }
+  };
+  $('#lgOk').onclick = doLogin;
+  $('#lgPass').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
+}
+function requireLogin() {
+  if (SNAP && SNAP.cfg && SNAP.cfg.token) return true;
+  $('#loginModal').classList.add('show');
+  return false;
 }
 
 function bindNameModal() {
@@ -493,6 +523,7 @@ function bind() {
   bindNameModal();
   bindBriefModal();
   bindPreviewModal();
+  bindLogin();
   bindChat();
   $$('.nav-item').forEach((b) => b.onclick = () => go(b.dataset.view));
   $$('[data-view]').forEach((b) => { if (b.classList.contains('link') || b.tagName === 'BUTTON' && !b.classList.contains('nav-item')) b.onclick = () => go(b.dataset.view); });
@@ -557,6 +588,8 @@ async function loadMe() {
   bind();
   await loadMe();
   await refresh();
+  requireLogin();
+  requireLogin();
   const h = (location.hash || '').replace('#', '');
   go(h || 'chat');
   if (location.search.includes('modal=1')) openTaskModal(location.search.includes('tpl=ledger') ? 'ledger' : (location.search.includes('tpl=bid') ? 'bid' : 'verify'));

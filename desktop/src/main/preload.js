@@ -21,6 +21,8 @@ contextBridge.exposeInMainWorld('wb', {
   onTool: (cb) => ipcRenderer.on('app:tool', (_e, d) => cb(d)),
   mySummary: () => ipcRenderer.invoke('cloud:mySummary'),
   me: () => ipcRenderer.invoke('cloud:me'),
+  login: (u, p) => ipcRenderer.invoke('auth:login', { username: u, password: p }),
+  logout: () => ipcRenderer.invoke('auth:logout'),
   expAction: (p) => ipcRenderer.invoke('cloud:expAction', p),
   saveOutput: (p) => ipcRenderer.invoke('project:saveOutput', p),
   listTextFiles: (p) => ipcRenderer.invoke('project:listTextFiles', p),

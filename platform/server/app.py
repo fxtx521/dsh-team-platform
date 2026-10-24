@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS skills(
 CREATE TABLE IF NOT EXISTS experiences(
   id TEXT PRIMARY KEY, task_id TEXT, title TEXT, kind TEXT, content TEXT,
   status TEXT DEFAULT 'pending', skill_id TEXT, created_at TEXT);
+CREATE TABLE IF NOT EXISTS auth_sessions(
+  id TEXT PRIMARY KEY, user_id TEXT, token TEXT UNIQUE, created_at TEXT);
 CREATE TABLE IF NOT EXISTS users(
   id TEXT PRIMARY KEY, username TEXT UNIQUE, display_name TEXT, role TEXT DEFAULT 'employee',
   dept TEXT, created_at TEXT);
@@ -865,6 +867,137 @@ async def _startup_bg():
             await _asyncio.sleep(1800)
     _asyncio.create_task(loop())
 
+
+# ── 统一账号：密码登录（客户端与 Web 共用一套账号）──────────
+def _hash_pw(pw: str, salt: str = "") -> str:
+    import hashlib as _h
+    if not salt:
+        salt = secrets.token_hex(8)
+    dk = _h.pbkdf2_hmac("sha256", pw.encode(), salt.encode(), 120000)
+    return salt + "$" + dk.hex()
+
+def _check_pw(pw: str, stored: str) -> bool:
+    try:
+        salt = stored.split("$")[0]
+        return _hash_pw(pw, salt) == stored
+    except Exception:
+        return False
+
+def _migrate_users():
+    c = conn()
+    try:
+        cols = [r[1] for r in c.execute("PRAGMA table_info(users)")]
+        if "password_hash" not in cols:
+            c.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
+        if "enabled" not in cols:
+            c.execute("ALTER TABLE users ADD COLUMN enabled INTEGER DEFAULT 1")
+        # 管理员账号：沿用现有网页密码初始化（仅首次）
+        row = c.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        if row and not row["password_hash"]:
+            c.execute("UPDATE users SET password_hash=? WHERE username='admin'", (_hash_pw(ADMIN_PASSWORD),))
+        c.commit()
+    except Exception as e:
+        print("migrate users:", e)
+    finally:
+        c.close()
+
+@app.post("/v1/auth/login")
+async def user_login(request: Request):
+    """账号密码登录（客户端与 Web 通用）。"""
+    b = await request.json()
+    u = (b.get("username") or "").strip()
+    p = b.get("password") or ""
+    c = conn()
+    row = c.execute("SELECT * FROM users WHERE username=? OR display_name=?", (u, u)).fetchone()
+    if not row or not row["password_hash"] or not _check_pw(p, row["password_hash"]) or not row["enabled"]:
+        c.close()
+        raise HTTPException(401, "账号或密码错误")
+    token = secrets.token_hex(24)
+    c.execute("INSERT OR REPLACE INTO auth_sessions(id,user_id,token,created_at) VALUES(?,?,?,?)",
+              (uuid.uuid4().hex, row["id"], token, now()))
+    c.commit(); c.close()
+    uinfo = {"username": row["username"], "display_name": row["display_name"], "role": row["role"], "dept": row["dept"]}
+    audit(row["display_name"] or row["username"], "auth.login", row["username"], "")
+    return {"ok": True, "token": token, "user": uinfo, "permissions": perms_for(row["role"])}
+
+def user_from_token(auth_header: Optional[str]):
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return None
+    tok = auth_header[7:].strip()
+    c = conn()
+    r = c.execute("""SELECT u.* FROM auth_sessions s JOIN users u ON u.id=s.user_id
+                    WHERE s.token=? AND u.enabled=1""", (tok,)).fetchone()
+    c.close()
+    return r
+
+def resolve_identity(request: Request, x_api_key: Optional[str]):
+    """优先 Bearer token（账号登录），其次终端 Key。返回 (dict_user, terminal_or_None)。"""
+    u = user_from_token(request.headers.get("authorization"))
+    if u:
+        return ({"username": u["username"], "display_name": u["display_name"], "role": u["role"], "dept": u["dept"]}, None)
+    t = auth(x_api_key)
+    return (user_of_terminal(t), t)
+
+@app.get("/v1/auth/me")
+async def auth_me(request: Request, x_api_key: Optional[str] = Header(None)):
+    ident, term = resolve_identity(request, x_api_key)
+    return {"ok": True, "user": ident, "permissions": perms_for(ident["role"]),
+            "terminal": ({"id": term["id"], "hostname": term["hostname"]} if term else None)}
+
+@app.post("/v1/auth/bind-device")
+async def bind_device(request: Request, x_api_key: Optional[str] = Header(None)):
+    """登录后把当前设备注册成该员工的终端，返回终端 Key。"""
+    ident, term = resolve_identity(request, x_api_key)
+    b = await request.json() if request.headers.get("content-type","").startswith("application/json") else {}
+    host = (b.get("hostname") or "").strip()[:60]
+    c = conn()
+    urow = c.execute("SELECT * FROM users WHERE username=?", (ident["username"],)).fetchone()
+    if not urow:
+        c.close(); raise HTTPException(404, "user not found")
+    exist = c.execute("SELECT * FROM terminals WHERE user_id=? AND hostname=?", (urow["id"], host)).fetchone()
+    if exist:
+        key = exist["api_key"]
+        c.execute("UPDATE terminals SET last_seen=? WHERE id=?", (now(), exist["id"]))
+        c.commit(); c.close()
+        return {"ok": True, "api_key": key, "terminal_id": exist["id"], "created": False}
+    key = "dsh_" + secrets.token_hex(16)
+    tid = uuid.uuid4().hex
+    c.execute("""INSERT INTO terminals(id,name,hostname,os,user_name,employee_no,api_key,last_seen,version,created_at,enabled,user_id)
+                 VALUES(?,?,?,?,?,?,?,?,?,?,1,?)""",
+              (tid, ident["display_name"] or ident["username"], host, "", ident["display_name"] or "", "", key, now(), "0.1.0", now(), urow["id"]))
+    c.commit(); c.close()
+    audit(ident["display_name"] or ident["username"], "auth.bind_device", host, "")
+    return {"ok": True, "api_key": key, "terminal_id": tid, "created": True}
+
+@app.get("/v1/users")
+async def list_users(request: Request):
+    require_admin(request)
+    c = conn()
+    rows = c.execute("""SELECT u.id,u.username,u.display_name,u.role,u.dept,u.enabled,u.created_at,
+                              (SELECT COUNT(*) FROM terminals t WHERE t.user_id=u.id) AS devices
+                       FROM users u ORDER BY u.created_at""").fetchall()
+    c.close()
+    return {"ok": True, "items": [dict(r) for r in rows]}
+
+@app.post("/v1/users")
+async def create_user(request: Request):
+    require_admin(request)
+    b = await request.json()
+    un = (b.get("username") or "").strip()
+    pw = b.get("password") or ""
+    if not un or len(pw) < 6:
+        raise HTTPException(400, "用户名必填，密码至少 6 位")
+    c = conn()
+    if c.execute("SELECT id FROM users WHERE username=?", (un,)).fetchone():
+        c.close(); raise HTTPException(400, "用户名已存在")
+    c.execute("""INSERT INTO users(id,username,display_name,role,dept,created_at,password_hash,enabled)
+                 VALUES(?,?,?,?,?,?,?,1)""",
+              (uuid.uuid4().hex, un, b.get("display_name") or un, b.get("role") or "employee",
+               b.get("dept") or "", now(), _hash_pw(pw)))
+    c.commit(); c.close()
+    audit("admin", "user.create", un, b.get("role") or "employee")
+    return {"ok": True, "username": un}
+
 ROLE_PERMS = {
     "employee": ["task.run", "task.view.own", "experience.view", "skill.sync"],
     "reviewer": ["task.run", "task.view.own", "task.view.team", "experience.view", "experience.approve", "skill.sync", "report.view"],
@@ -1577,7 +1710,18 @@ async def login_submit(request: Request):
     form = parse_qs(body)
     u = (form.get("username") or [""])[0]
     p = (form.get("password") or [""])[0]
+    ok = False
+    # 1) 旧的管理员文件密码（兼容）
     if u == AUTH["user"] and hmac.compare_digest(hashlib.sha256(p.encode()).hexdigest(), AUTH["pass_sha"]):
+        ok = True
+    # 2) 统一账号表（客户端与网页同一套账号；管理员/主管可登录后台）
+    c = conn()
+    row = c.execute("SELECT * FROM users WHERE username=? OR display_name=?", (u, u)).fetchone()
+    c.close()
+    if not ok and row and row["password_hash"] and row["enabled"] and _check_pw(p, row["password_hash"]):
+        if row["role"] in ("admin", "reviewer"):
+            ok = True
+    if ok:
         resp = RedirectResponse("/dashboard", status_code=303)
         resp.set_cookie(COOKIE_NAME, make_token(), max_age=SESSION_TTL, httponly=True, samesite="lax")
         audit(u, "admin.login", "", "")
@@ -1599,3 +1743,10 @@ async def dashboard(request: Request):
 @app.get("/health")
 async def health():
     return {"status": "ok", "time": now()}
+
+# 模块加载完成后执行账号迁移（需在上面定义）
+init()
+try:
+    _migrate_users()
+except Exception as _e:
+    print("migrate at import:", _e)

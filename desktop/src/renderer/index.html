@@ -170,6 +170,19 @@
     </section>
   </main>
 </div>
+<div class="modal-mask" id="loginModal">
+  <div class="modal" style="width:420px">
+    <div class="modal-h"><h3>登录 · 砺工作台</h3></div>
+    <div class="modal-b">
+      <p class="sub" style="margin-bottom:12px">用公司账号登录（与网页端同一套账号）。登录后本机会自动绑定成一个终端，平台就知道「谁在哪台机器」。</p>
+      <label class="field"><span>账号</span><input id="lgUser" placeholder="例如：zhangsan" /></label>
+      <label class="field"><span>密码</span><input id="lgPass" type="password" placeholder="••••••" /></label>
+      <div id="lgErr" style="color:#dc2626;font-size:12.5px;min-height:18px"></div>
+    </div>
+    <div class="modal-f"><button class="btn primary" id="lgOk">登录</button></div>
+  </div>
+</div>
+
 <div class="modal-mask" id="previewModal">
   <div class="modal" style="width:720px">
     <div class="modal-h"><h3 id="pvTitle">文件预览</h3><button class="modal-x" id="pvClose">✕</button></div>
