@@ -5,6 +5,26 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ---
 
+## [0.37.0] - 2026-10-24
+
+### 中文
+
+**P0 体验收口（第一组）**
+- **会话搜索**：会话栏加搜索框，按标题和消息内容过滤
+- **消息操作**：每条 AI 回复加「复制」「重新生成」（重新生成会撤回该问并重跑）
+- **实时进度**：助理思考时显示动画点；云端调用本地工具时，对话里实时出现「📂 读取文件…」等步骤（MCP 工具执行现在会向前端推送事件）
+- 无头渲染截图核对搜索框与示例卡片布局
+
+### English
+
+**P0 polish (batch 1)**
+- **Session search**: filter sessions by title and message content
+- **Message actions**: Copy and Regenerate on each AI reply (regenerate removes that turn and re-runs)
+- **Live progress**: animated typing dots, plus real-time step entries when the cloud agent calls local MCP tools
+- Layout verified with headless screenshots
+
+---
+
 ## [0.36.0] - 2026-10-24
 
 ### 中文

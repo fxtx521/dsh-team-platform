@@ -503,6 +503,8 @@ function loadCapabilitiesWith(c) {
       if (e.key === 'ArrowDown') { e.preventDefault(); if (cmdHistory.length) { histIdx = Math.min(histIdx + 1, cmdHistory.length); cmdEl.value = cmdHistory[histIdx] || ''; } }
     });
   }
+  const cs = $('#chatSearch');
+  if (cs) cs.addEventListener('input', renderSessions);
   const kbBtn = $('#btnKbPick');
   if (kbBtn) kbBtn.onclick = async () => {
     const r = await api.octopKbList();
@@ -852,7 +854,13 @@ function saveSessions() { try { localStorage.setItem(SESS_KEY, JSON.stringify(se
 function getSession() { return sessions.find((s) => s.id === curSession) || sessions[0]; }
 function renderSessions() {
   const box = $('#chatSessions'); if (!box) return;
-  box.innerHTML = sessions.map((s) => `<div class="sess ${s.id === curSession ? 'active' : ''}" data-sid="${s.id}"><b>${esc(s.title)}</b><span class="del" data-ren="${s.id}" title="重命名">✎</span><span class="del" data-del="${s.id}">✕</span></div>`).join('');
+  const q = (($('#chatSearch') || {}).value || '').trim().toLowerCase();
+  const list = !q ? sessions : sessions.filter((s) => {
+    const t = (s.title || '').toLowerCase();
+    const m = (s.msgs || []).some((x) => String(x.text || '').toLowerCase().includes(q));
+    return t.includes(q) || m;
+  });
+  box.innerHTML = list.map((s) => `<div class="sess ${s.id === curSession ? 'active' : ''}" data-sid="${s.id}"><b>${esc(s.title)}</b><span class="del" data-ren="${s.id}" title="重命名">✎</span><span class="del" data-del="${s.id}">✕</span></div>`).join('');
   box.querySelectorAll('[data-sid]').forEach((el) => {
     el.onclick = (e) => {
       if (e.target.dataset.del) return;
@@ -912,7 +920,7 @@ function md(src) {
 function renderChat() {
   const s = getSession(); if (!s) return;
   const box = $('#chatBody');
-  box.innerHTML = (s.msgs || []).map((m, i) => `<div class="msg ${m.role}">${m.role === 'ai' ? md(m.text) : esc(m.text)}${m.role === 'ai' ? `<span class="meta"><button class="mini" data-speak="${i}">🔊 朗读</button><button class="mini" data-save="${i}">保存到项目</button>${m.meta ? ' · ' + esc(m.meta) : ''}</span>` : (m.role === 'sys' ? `data-file="${esc(m.file || '')}" data-out="${i}" style="cursor:pointer" title="点开看内容/输出"` : (m.meta ? `<span class="meta">${esc(m.meta)}</span>` : ''))}</div>`).join('');
+  box.innerHTML = (s.msgs || []).map((m, i) => `<div class="msg ${m.role}">${m.role === 'ai' ? md(m.text) : esc(m.text)}${m.role === 'ai' ? `<span class="meta"><button class="mini" data-copy="${i}">复制</button><button class="mini" data-regen="${i}">重新生成</button><button class="mini" data-speak="${i}">🔊 朗读</button><button class="mini" data-save="${i}">保存到项目</button>${m.meta ? ' · ' + esc(m.meta) : ''}</span>` : (m.role === 'sys' ? `data-file="${esc(m.file || '')}" data-out="${i}" style="cursor:pointer" title="点开看内容/输出"` : (m.meta ? `<span class="meta">${esc(m.meta)}</span>` : ''))}</div>`).join('');
   if (!s.msgs || !s.msgs.length) {
     const samples = [
       '把这个项目里的台账整理成一张表',
@@ -946,6 +954,28 @@ function renderChat() {
       if (m && m.out) showText(el.textContent, m.out);
     };
   });
+  box.querySelectorAll('[data-copy]').forEach((el) => {
+    el.onclick = async () => {
+      const idx = parseInt(el.dataset.copy, 10);
+      const msg = (s.msgs || [])[idx]; if (!msg) return;
+      try { await navigator.clipboard.writeText(msg.text || ''); toast('已复制'); } catch { toast('复制失败'); }
+    };
+  });
+  box.querySelectorAll('[data-regen]').forEach((el) => {
+    el.onclick = () => {
+      const idx = parseInt(el.dataset.regen, 10);
+      const msgs = s.msgs || [];
+      if (!msgs[idx]) return;
+      let u = -1;
+      for (let k = idx - 1; k >= 0; k -= 1) { if (msgs[k].role === 'user') { u = k; break; } }
+      if (u < 0) return;
+      const text = msgs[u].text;
+      msgs.splice(u);
+      saveSessions(); renderChat();
+      const inp = $('#chatInput'); if (inp) inp.value = text;
+      sendChat();
+    };
+  });
   box.querySelectorAll('[data-save]').forEach((el) => {
     el.onclick = async () => {
       const idx = parseInt(el.dataset.save, 10);
@@ -973,7 +1003,7 @@ async function sendChat() {
   renderChat();
   const box = $('#chatBody');
   const tip = document.createElement('div');
-  tip.className = 'typing'; tip.textContent = '助理思考中…'; box.appendChild(tip); box.scrollTop = box.scrollHeight;
+  tip.className = 'typing'; tip.innerHTML = '助理思考中<i></i><i></i><i></i>'; box.appendChild(tip); box.scrollTop = box.scrollHeight;
   const proj = $('#chatProject') ? $('#chatProject').value : '';
   const expert = $('#chatExpert') ? $('#chatExpert').value : '';
   let r;

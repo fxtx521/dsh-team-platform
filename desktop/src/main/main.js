@@ -969,9 +969,21 @@ function startMcpServer() {
       if (method === "tools/call") {
         const p = msg.params || {};
         try {
+          const t0 = Date.now();
           const out = mcpExec(p.name, p.arguments || {});
+          if (win && !win.isDestroyed()) {
+            win.webContents.send("app:tool", {
+              tool: p.name, ok: true, ms: Date.now() - t0,
+              argsText: String((p.arguments && (p.arguments.dir || p.arguments.file || p.arguments.cmd)) || "").slice(0, 120),
+              path: (p.arguments && (p.arguments.file || p.arguments.dir)) || "",
+              outputPreview: String(out || "").slice(0, 600),
+            });
+          }
           return ok({ content: [{ type: "text", text: String(out).slice(0, 20000) }], isError: false });
         } catch (e) {
+          if (win && !win.isDestroyed()) {
+            win.webContents.send("app:tool", { tool: p.name, ok: false, ms: 0, argsText: "", path: "", outputPreview: String(e.message || "") });
+          }
           return ok({ content: [{ type: "text", text: "错误: " + e.message }], isError: true });
         }
       }
