@@ -152,7 +152,12 @@
 
     <section class="view" id="view-settings">
       <div class="card">
-        <div class="card-h"><h3>连接</h3></div>
+        <div class="card-h"><h3>连接 Octop（主）</h3></div>
+        <label class="field"><span>Octop 地址</span><input id="cfgOctop" placeholder="http://192.168.1.239:18090" /></label>
+        <button class="btn primary" id="btnSaveOctop">保存</button>
+      </div>
+      <div class="card">
+        <div class="card-h"><h3>旧后台（已停用，可留空）</h3></div>
         <label class="field"><span>服务器地址</span><input id="cfgServer" placeholder="http://127.0.0.1:8000" /></label>
         <label class="field"><span>员工 Key</span><input id="cfgKey" placeholder="dsh_xxx（从平台终端管理复制）" /></label>
         <label class="field"><span>员工姓名</span><input id="cfgName" placeholder="张三" /></label>

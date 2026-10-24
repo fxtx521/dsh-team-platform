@@ -115,15 +115,19 @@ async function api(method, p, body) {
 }
 
 async function heartbeat() {
-  const r = await api('POST', '/v1/heartbeat', { version: '0.1.0', host: os.hostname(), platform: process.platform });
+  // 直连模式：健康检查打 Octop；未登录时离线
+  const cfg = readCfg();
+  if (!cfg.octopToken) {
+    state.online = false;
+    state.lastBeat = new Date().toISOString();
+    log('未登录 Octop');
+    broadcast();
+    return;
+  }
+  const r = await octopFetch('GET', '/api/health');
   state.online = r.ok;
   state.lastBeat = new Date().toISOString();
-  if (r.ok) {
-    log('心跳正常 · skills_version=' + (r.data.skills_version ?? '-'));
-    await syncSkills();
-  } else {
-    log('心跳失败: status=' + r.status + ' ' + JSON.stringify(r.data).slice(0, 160));
-  }
+  log(r.ok ? 'Octop 连接正常' : ('Octop 连接失败: status=' + r.status));
   broadcast();
 }
 
@@ -361,6 +365,19 @@ ipcMain.handle('cloud:me', async () => {
   return await api('GET', '/v1/auth/me');
 });
 
+ipcMain.handle('octop:login', async (_e, { username, password }) => await octopLogin(username, password));
+
+ipcMain.handle('octop:experts', async () => {
+  const r = await octopFetch('GET', '/api/experts');
+  const list = (r.ok && Array.isArray(r.data)) ? r.data : [];
+  return { ok: r.ok, items: list.map((e) => {
+    const lb = e.label || {};
+    return { id: e.id, name: lb.zh || lb.en || e.id };
+  }) };
+});
+
+ipcMain.handle('octop:chat', async (_e, payload) => await octopChat(payload));
+
 ipcMain.handle('auth:login', async (_e, { username, password }) => {
   const cfg = readCfg();
   const base = cfg.serverUrl.replace(/\/$/, '');
@@ -491,6 +508,88 @@ function startMcpServer() {
   });
   mcpServer.on("error", (e) => log("MCP 服务启动失败: " + e.message));
   mcpServer.listen(MCP_PORT, host, () => log("MCP 服务已启动: http://" + host + ":" + MCP_PORT + "/mcp"));
+}
+
+
+// ── Octop 直连客户端（登录 / 专家 / 对话 WS）────────────────
+const WebSocket = require("ws");
+
+function octopBase() {
+  const c = readCfg();
+  return String(c.octopUrl || "http://127.0.0.1:18090").replace(/\/$/, "");
+}
+
+function octopFetch(method, p, body, token) {
+  const base = octopBase();
+  const headers = { "Content-Type": "application/json" };
+  const tk = token || readCfg().octopToken;
+  if (tk) headers["Authorization"] = "Bearer " + tk;
+  return httpReq(method, base + p, body, headers, 25000);
+}
+
+async function octopLogin(username, password) {
+  const base = octopBase();
+  const r = await httpReq("POST", base + "/api/auth/login", { username, password }, { "Content-Type": "application/json" }, 20000);
+  if (!r.ok || !r.data || !r.data.access_token) {
+    return { ok: false, error: (r.data && (r.data.error || r.data.detail)) || "登录失败" };
+  }
+  const token = r.data.access_token;
+  const me = r.data.user || {};
+  // 选默认助理（已绑定 MCP 的优先，其次第一个）
+  let agentId = "";
+  const ags = await octopFetch("GET", "/api/agents", null, token);
+  const list = (ags.ok && Array.isArray(ags.data)) ? ags.data : [];
+  const withMcp = list.find((a) => Array.isArray(a.mcp_servers) && a.mcp_servers.length);
+  agentId = (withMcp && withMcp.agent_id) || (list[0] && list[0].agent_id) || "";
+  writeCfg({ ...readCfg(), octopToken: token, octopAgent: agentId, employeeName: me.display_name || me.username || username });
+  log("Octop 登录成功: " + (me.username || username) + " · 助理 " + agentId);
+  broadcast();
+  return { ok: true, token, user: me, agentId, agents: list.map((a) => ({ id: a.agent_id, name: a.name })) };
+}
+
+const octopThreads = {};
+async function octopThread(agentId, sessionId) {
+  const key = agentId + ":" + sessionId;
+  if (octopThreads[key]) return octopThreads[key];
+  const r = await octopFetch("POST", "/api/agents/" + agentId + "/threads", {});
+  const tid = (r.ok && r.data && r.data.thread_id) || "";
+  if (tid) octopThreads[key] = tid;
+  return tid;
+}
+
+async function octopChat({ text, sessionId, agentId }) {
+  const cfg = readCfg();
+  const tk = cfg.octopToken;
+  if (!tk) return { ok: false, error: "未登录 Octop" };
+  const aid = agentId || cfg.octopAgent;
+  if (!aid) return { ok: false, error: "没有可用助理" };
+  const tid = await octopThread(aid, sessionId || "default");
+  const base = octopBase();
+  const wsUrl = base.replace(/^http/, "ws") + "/api/agents/" + aid + "/chat/ws?token=" + encodeURIComponent(tk);
+  return await new Promise((resolve) => {
+    let out = "";
+    let settled = false;
+    const finish = (v) => { if (settled) return; settled = true; try { ws.close(); } catch {} resolve(v); };
+    const ws = new WebSocket(wsUrl);
+    const timer = setTimeout(() => finish({ ok: false, error: "超时" }), 240000);
+    ws.on("open", () => {
+      ws.send(JSON.stringify({ type: "user_turn", text, thread_id: tid || undefined, session_key: "client:" + (sessionId || "default") }));
+    });
+    ws.on("message", (buf) => {
+      let m;
+      try { m = JSON.parse(buf.toString()); } catch { return; }
+      const t = m.type || (m.data && m.data.type);
+      if (t === "error") { clearTimeout(timer); return finish({ ok: false, error: m.message || "对话出错" }); }
+      if (t === "done") { clearTimeout(timer); return finish({ ok: true, reply: out, elapsed_ms: Date.now() - started }); }
+      const chunk = (typeof m.text === "string" && m.text) ||
+                    (m.data && (typeof m.data.text === "string" ? m.data.text : (typeof m.data.delta === "string" ? m.data.delta : ""))) ||
+                    (typeof m.content === "string" ? m.content : "");
+      if (typeof chunk === "string") out += chunk;
+    });
+    const started = Date.now();
+    ws.on("error", (e) => { clearTimeout(timer); finish({ ok: false, error: e.message }); });
+    ws.on("close", () => { if (!settled) { clearTimeout(timer); finish({ ok: out.length > 0, reply: out }); } });
+  });
 }
 
 ipcMain.handle('cloud:chat', async (_e, { message, sessionId, files, projectId, expertId }) => {

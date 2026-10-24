@@ -133,13 +133,13 @@ function bindLogin() {
     $('#lgErr').textContent = '';
     if (!u || !p) { $('#lgErr').textContent = '请输入账号和密码'; return; }
     $('#lgOk').textContent = '登录中…';
-    const r = await api.login(u, p);
+    const r = (api.octopLogin ? await api.octopLogin(u, p) : await api.login(u, p));
     $('#lgOk').textContent = '登录';
     if (r && r.ok) {
       $('#loginModal').classList.remove('show');
       await refresh();
       await loadMe();
-      toast('欢迎，' + ((r.user && r.user.display_name) || u));
+      toast('欢迎，' + ((r.user && r.user.display_name) || u) + (r.agentId ? ' · 助理已就绪' : ''));
       go('chat');
     } else {
       $('#lgErr').textContent = (r && r.error) || '登录失败';
@@ -296,6 +296,7 @@ function fillSettings() {
   const mu = $('#mcpUrl'); if (mu) mu.textContent = m.url || '（未启用）';
   const mo = $('#mcpOn'); if (mo) mo.checked = m.enabled !== false;
   const c = SNAP?.cfg || {};
+  const co = $('#cfgOctop'); if (co) co.value = c.octopUrl || 'http://192.168.1.239:18090';
   $('#cfgServer').value = c.serverUrl || '';
   $('#cfgKey').value = c.apiKey || '';
   $('#cfgName').value = c.employeeName || '';
@@ -475,7 +476,13 @@ async function sendChat() {
   tip.className = 'typing'; tip.textContent = '助理思考中…'; box.appendChild(tip); box.scrollTop = box.scrollHeight;
   const proj = $('#chatProject') ? $('#chatProject').value : '';
   const expert = $('#chatExpert') ? $('#chatExpert').value : '';
-  const r = await api.chat(text, sid, attachments.slice(), proj, expert);
+  let r;
+  if (api.octopChat) {
+    const res = await api.octopChat({ text, sessionId: sid, agentId: expert || undefined });
+    r = res && res.ok ? { ok: true, data: { reply: res.reply, elapsed_ms: res.elapsed_ms } } : { ok: false, data: { error: (res && res.error) || '对话失败' } };
+  } else {
+    r = await api.chat(text, sid, attachments.slice(), proj, expert);
+  }
   attachments = []; renderAttach();
   tip.remove();
   // 只写回发起这条消息的会话（即使中途切走了）
@@ -501,8 +508,8 @@ function bindChat() {
   if (exSel && !exSel._loaded) {
     exSel._loaded = true;
     (async () => {
-      const r = await api.experts ? await api.experts() : { ok: false };
-      const items = (r && r.data && r.data.items) || [];
+      const r = (api.octopExperts ? await api.octopExperts() : (api.experts ? await api.experts() : { ok: false }));
+      const items = (r && (r.items || (r.data && r.data.items))) || [];
       exSel.innerHTML = '<option value="">默认助理</option>' +
         items.map((e) => `<option value="${esc(e.id)}">${esc(e.name)}</option>`).join('');
     })();
@@ -568,6 +575,8 @@ function bind() {
     out.scrollTop = out.scrollHeight;
   };
   $('#consoleCmd').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#btnRunCmd').click(); });
+  const bo = $('#btnSaveOctop');
+  if (bo) bo.onclick = async () => { await api.saveConfig({ octopUrl: $('#cfgOctop').value.trim() }); await refresh(); toast('Octop 地址已保存'); };
   $('#btnSaveConn').onclick = async () => {
     await api.saveConfig({ serverUrl: $('#cfgServer').value.trim(), apiKey: $('#cfgKey').value.trim(), employeeName: $('#cfgName').value.trim() });
     await api.heartbeat(); await refresh(); toast('连接设置已保存');

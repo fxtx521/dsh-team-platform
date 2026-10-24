@@ -5,6 +5,26 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ---
 
+## [0.13.0] - 2026-10-24
+
+### 中文
+
+- **客户端完全直连 Octop**：登录、助理列表、专家库、对话（WebSocket `/api/agents/{id}/chat/ws`）全部直达 Octop，不再经过自研后台。
+- 心跳改为探测 Octop `/api/health`；未登录时明确提示「未登录 Octop」。
+- 内置 MCP 服务与反向隧道保持不变，Octop 可直连本地文件/命令。
+- 设置页新增「Octop 地址」；旧后台配置保留但不再使用。
+- 移除本地守护任务（旧后台已停用，不再需要）。
+
+### English
+
+- **The client now talks to Octop directly**: login, agents, experts and chat (WebSocket `/api/agents/{id}/chat/ws`) all go straight to Octop; no self-hosted backend in the path.
+- Heartbeat now probes Octop `/api/health`; when not logged in it clearly shows "not logged in to Octop".
+- Built-in MCP server and reverse tunnel unchanged; Octop can access local files/commands directly.
+- Settings gained an "Octop URL" field; legacy backend settings kept but unused.
+- Removed the local watchdog job (the old backend is retired).
+
+---
+
 ## [0.12.0] - 2026-10-24
 
 ### 中文
