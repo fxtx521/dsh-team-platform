@@ -975,9 +975,33 @@ async def list_users(request: Request):
     c = conn()
     rows = c.execute("""SELECT u.id,u.username,u.display_name,u.role,u.dept,u.enabled,u.created_at,
                               (SELECT COUNT(*) FROM terminals t WHERE t.user_id=u.id) AS devices
-                       FROM users u ORDER BY u.created_at""").fetchall()
+                       FROM users u WHERE u.password_hash IS NOT NULL ORDER BY u.created_at""").fetchall()
     c.close()
     return {"ok": True, "items": [dict(r) for r in rows]}
+
+@app.patch("/v1/users/{user_id}")
+async def update_user(user_id: str, request: Request):
+    require_admin(request)
+    b = await request.json()
+    c = conn()
+    row = c.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+    if not row:
+        c.close(); raise HTTPException(404, "user not found")
+    if b.get("role"):
+        c.execute("UPDATE users SET role=? WHERE id=?", (b["role"], user_id))
+    if b.get("display_name"):
+        c.execute("UPDATE users SET display_name=? WHERE id=?", (b["display_name"], user_id))
+    if b.get("dept") is not None:
+        c.execute("UPDATE users SET dept=? WHERE id=?", (b["dept"], user_id))
+    if b.get("password"):
+        if len(b["password"]) < 6:
+            c.close(); raise HTTPException(400, "密码至少 6 位")
+        c.execute("UPDATE users SET password_hash=? WHERE id=?", (_hash_pw(b["password"]), user_id))
+    if b.get("enabled") is not None:
+        c.execute("UPDATE users SET enabled=? WHERE id=?", (1 if b["enabled"] else 0, user_id))
+    c.commit(); c.close()
+    audit("admin", "user.update", row["username"], str({k: v for k, v in b.items() if k != "password"}))
+    return {"ok": True}
 
 @app.post("/v1/users")
 async def create_user(request: Request):
@@ -1483,6 +1507,54 @@ async def report_page(request: Request):
         return RedirectResponse("/login", status_code=303)
     return REPORT_HTML
 
+
+USERS_HTML = """<!doctype html><html><head><meta charset="utf-8"><title>账号管理</title><style>""" + PAGE_CSS + """
+.uform{display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:10px;align-items:end}
+.uform input,.uform select{border:1px solid #dfe3ea;border-radius:10px;padding:10px 12px;font-size:13px;font-family:inherit;width:100%}
+.uform label{font-size:12px;color:#6b7280;display:block;margin-bottom:5px}
+""" + """</style></head><body>""" + NAV + """
+<div class="card"><h2>账号管理</h2>
+<div class="muted">客户端与网页共用这套账号。员工登录客户端后会自动绑定设备。</div>
+<div class="uform" style="margin-top:14px">
+  <div><label>账号</label><input id="uName" placeholder="zhangsan" /></div>
+  <div><label>姓名</label><input id="uDisplay" placeholder="张三" /></div>
+  <div><label>密码</label><input id="uPass" placeholder="至少 6 位" /></div>
+  <div><label>角色</label><select id="uRole"><option value="employee">员工</option><option value="reviewer">主管</option><option value="admin">管理员</option></select></div>
+  <div><button class="ok" onclick="createUser()">新建账号</button></div>
+</div></div>
+<div class="card"><h2>账号列表</h2><table id="tbl" style="width:100%;border-collapse:collapse;font-size:13px">
+<thead><tr><th style="text-align:left;padding:8px 6px;color:#6b7280">账号</th><th style="text-align:left;padding:8px 6px;color:#6b7280">姓名</th><th style="text-align:left;padding:8px 6px;color:#6b7280">角色</th><th style="text-align:left;padding:8px 6px;color:#6b7280">部门</th><th style="text-align:left;padding:8px 6px;color:#6b7280">设备</th><th style="text-align:left;padding:8px 6px;color:#6b7280">状态</th><th style="text-align:left;padding:8px 6px;color:#6b7280">操作</th></tr></thead>
+<tbody></tbody></table></div>
+<script>
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
+const ROLE={employee:"员工",reviewer:"主管",admin:"管理员"};
+async function load(){
+  const r=await fetch("/v1/users");const d=await r.json();
+  document.querySelector("#tbl tbody").innerHTML=d.items.map(u=>`<tr style="border-top:1px solid #eef0f4">
+    <td style="padding:8px 6px">${esc(u.username)}</td><td style="padding:8px 6px">${esc(u.display_name)}</td>
+    <td style="padding:8px 6px">${ROLE[u.role]||esc(u.role)}</td><td style="padding:8px 6px">${esc(u.dept||"")}</td>
+    <td style="padding:8px 6px">${u.devices||0}</td>
+    <td style="padding:8px 6px">${u.enabled?"<span class=\"tag\">正常</span>":"<span class=\"tag\">已禁用</span>"}</td>
+    <td style="padding:8px 6px"><button class="ok" onclick="setRole('${u.id}')">改角色</button> <button class="no" onclick="resetPw('${u.id}')">重置密码</button> <button class="no" onclick="toggle('${u.id}',${u.enabled?0:1})">${u.enabled?"禁用":"启用"}</button></td></tr>`).join("");
+}
+async function createUser(){
+  const body={username:document.getElementById("uName").value.trim(),display_name:document.getElementById("uDisplay").value.trim(),password:document.getElementById("uPass").value,role:document.getElementById("uRole").value};
+  const r=await fetch("/v1/users",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  const d=await r.json(); if(d.ok){alert("已创建："+body.username);load();}else{alert("失败："+(d.detail||JSON.stringify(d)));}
+}
+async function patch(id,body){const r=await fetch("/v1/users/"+id,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const d=await r.json();if(!d.ok)alert("失败："+(d.detail||""));load();}
+function setRole(id){const r=prompt("新角色：employee / reviewer / admin","reviewer");if(r)patch(id,{role:r});}
+function resetPw(id){const p=prompt("新密码（至少 6 位）","");if(p&&p.length>=6)patch(id,{password:p});else if(p)alert("太短");}
+function toggle(id,v){patch(id,{enabled:!!v});}
+load();
+</script></body></html>"""
+
+@app.get("/users", response_class=HTMLResponse)
+async def users_page(request: Request):
+    if not check_token(request.cookies.get(COOKIE_NAME, "")):
+        return RedirectResponse("/login", status_code=303)
+    return USERS_HTML
+
 @app.get("/experience", response_class=HTMLResponse)
 async def experience_page(request: Request):
     if not check_token(request.cookies.get(COOKIE_NAME, "")):
@@ -1626,6 +1698,7 @@ th{color:#8592a8;font-weight:600;font-size:12px}
 <a href="/experience" style="color:#fff;opacity:.75;font-size:12.5px;margin-left:16px;text-decoration:none">经验审核</a>
 <a href="/skills" style="color:#fff;opacity:.75;font-size:12.5px;margin-left:12px;text-decoration:none">技能库</a>
 <a href="/report" style="color:#fff;opacity:.75;font-size:12.5px;margin-left:12px;text-decoration:none">周报</a>
+<a href="/users" style="color:#fff;opacity:.75;font-size:12.5px;margin-left:12px;text-decoration:none">账号</a>
 <a href="/terminals" style="color:#fff;opacity:.75;font-size:12.5px;margin-left:12px;text-decoration:none">终端管理</a>
 <a href="/logout" style="color:#fff;opacity:.75;font-size:12.5px;margin-left:14px;text-decoration:none">退出</a></div>
 <div class="kpis">
