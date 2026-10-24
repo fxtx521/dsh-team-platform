@@ -5,6 +5,30 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ---
 
+## [0.15.1] - 2026-10-24
+
+### 中文
+
+**修复：切换专家后对话无回复**（两个根因）
+- 客户端把「专家 ID」当成「助理 ID」直接用于会话/WS，指向了不存在的助理 → 现在会先解析成对应助理。
+- 从专家新建的助理 `default_model` 为空，模型必然调用失败 → 现在自动补默认模型（启动时全量修复 + 对话时兜底）。
+- 新增：专家助理按需创建并缓存（`expertAgents` 映射），以后新增专家无需手工配置。
+
+**验证**
+- 全新专家「AI 编程实战导师」：自动创建助理 EMPMCR → 自动补 `mimo-v2.6-flash` → 正常回复。
+
+### English
+
+**Fixed: no reply after switching experts** (two root causes)
+- The client used the **expert id** as an **agent id**, pointing at a non-existent agent; it now resolves expert → agent first.
+- Agents created from experts have an empty `default_model`, so model calls failed; the client now fills a default model (startup sweep + on-demand fallback).
+- Expert agents are created on demand and cached (`expertAgents` map), so newly added experts work without manual setup.
+
+**Verified**
+- A brand-new expert ("AI Coding Coach") auto-created agent EMPMCR, got `mimo-v2.6-flash`, and replied normally.
+
+---
+
 ## [0.15.0] - 2026-10-24
 
 ### 中文

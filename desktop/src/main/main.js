@@ -580,11 +580,64 @@ async function ensureOctopAgent() {
   return aid;
 }
 
+
+// 专家 -> 助理 解析（按需创建 / 补默认模型），保证任何专家都能回话
+async function octopAgents() {
+  const r = await octopFetch("GET", "/api/agents");
+  return (r.ok && Array.isArray(r.data)) ? r.data : [];
+}
+
+function activeModelOf(agents) {
+  const withModel = agents.find((a) => a && a.default_model);
+  return (withModel && withModel.default_model) || "mimo-v2.6-flash";
+}
+
+async function ensureAgentModel(agentId, model) {
+  const r = await octopFetch("PATCH", "/api/agents/" + agentId, { default_model: model });
+  if (r.ok) log("已为助理 " + agentId + " 补默认模型: " + model);
+  return r.ok;
+}
+
+async function resolveExpertAgent(expertId) {
+  const cfg = readCfg();
+  const cache = cfg.expertAgents || {};
+  if (cache[expertId]) return cache[expertId];
+  let agents = await octopAgents();
+  const model = activeModelOf(agents);
+  let hit = agents.find((a) => a.expert_id === expertId);
+  if (!hit) {
+    const r = await octopFetch("POST", "/api/agents/from-expert/" + encodeURIComponent(expertId), {});
+    if (!r.ok) { log("创建专家助理失败: " + expertId); return ""; }
+    hit = r.data;
+    log("已从专家创建助理: " + expertId + " -> " + (hit && hit.agent_id));
+  }
+  const aid = hit && hit.agent_id;
+  if (!aid) return "";
+  if (!hit.default_model) await ensureAgentModel(aid, model);
+  writeCfg({ ...readCfg(), expertAgents: Object.assign({}, cache, { [expertId]: aid }) });
+  return aid;
+}
+
+async function repairAllAgentModels() {
+  const agents = await octopAgents();
+  const model = activeModelOf(agents);
+  for (const a of agents) {
+    if (a && a.agent_id && !a.default_model) await ensureAgentModel(a.agent_id, model);
+  }
+}
+
 async function octopChat({ text, sessionId, agentId }) {
   const cfg = readCfg();
   const tk = cfg.octopToken;
   if (!tk) return { ok: false, error: "未登录 Octop" };
-  const aid = agentId || cfg.octopAgent || await ensureOctopAgent();
+  let aid = agentId || cfg.octopAgent;
+  if (aid && aid !== cfg.octopAgent) {
+    // 传进来的是专家 id 时，先解析成助理 id
+    const known = (cfg.expertAgents || {})[aid];
+    aid = known || await resolveExpertAgent(aid);
+    if (!aid) return { ok: false, error: "该专家暂时无法创建助理" };
+  }
+  if (!aid) aid = await ensureOctopAgent();
   if (!aid) return { ok: false, error: "没有可用助理" };
   const tid = await octopThread(aid, sessionId || "default");
   const base = octopBase();
@@ -725,6 +778,7 @@ app.whenReady().then(() => {
   setTimeout(heartbeat, 1500);
   setInterval(heartbeat, 60 * 1000);
   setTimeout(async () => { try { await ensureOctopAgent(); } catch {} }, 4000);
+  setTimeout(async () => { try { await repairAllAgentModels(); } catch (e) { log('修复模型失败: ' + e.message); } }, 6000);
   setTimeout(startPoller, 2500);
   try { startMcpServer(); } catch (e) { log('MCP 启动异常: ' + e.message); }
   app.on('activate', () => { if (!win) createWindow(); else win.show(); });
