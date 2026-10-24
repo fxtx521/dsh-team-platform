@@ -203,11 +203,13 @@ function go(view) {
   $$('.view').forEach((v) => v.classList.remove('active'));
   const el = $('#view-' + view); if (el) el.classList.add('active');
   $$('.nav-item').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
-  $('#crumb').textContent = { home: '概览', chat: '对话', projects: '我的项目', tasks: '任务', experiences: '经验', capabilities: '云端能力', skills: '技能库', console: '终端', settings: '设置' }[view] || '';
+  $('#crumb').textContent = { home: '概览', chat: '对话', projects: '我的项目', tasks: '任务', experiences: '经验', capabilities: '诊断', knowledge: '知识库', expertspage: '专家广场', skills: '技能库', console: '终端', settings: '设置' }[view] || '';
   if (view === 'chat') bindChat();
   if (view === 'tasks') loadTasks();
   if (view === 'experiences') loadExperiences();
   if (view === 'capabilities') loadCapabilities();
+  if (view === 'knowledge') { loadKnowledge(); loadKbDocs(); }
+  if (view === 'expertspage') loadExpertsPage();
   if (view === 'skills') loadSkills();
   if (view === 'settings') fillSettings();
 }
@@ -477,6 +479,74 @@ async function loadExperiences() {
     return;
   }
 }
+
+// ── 知识库页 ─────────────────────────────
+let curKbId = "";
+
+// ── 右侧上下文面板 ─────────────────────────
+let ctxTab = "files";
+async function renderContext() {
+  const box = $("#ctxBody");
+  if (!box) return;
+  if (ctxTab === "files") {
+    const proj = (SNAP?.cfg?.projects || []).find((p) => p.id === ($("#chatProject") || {}).value) || (SNAP?.cfg?.projects || [])[0];
+    if (!proj) { box.innerHTML = '<div class="sub">先添加一个项目</div>'; return; }
+    const r = await api.listFiles({ dir: proj.dir, rel: "." });
+    const items = (r && r.items) || [];
+    box.innerHTML = items.slice(0, 80).map(function (f) {
+      const full = proj.dir + '/' + f.name;
+      return '<div class="ctx-file" data-ctx-file="' + esc(full) + '"><span class="ic">' + (f.dir ? '📁' : '📄') + '</span><span>' + esc(f.name) + '</span></div>';
+    }).join('') || '<div class="sub">项目是空的</div>';
+    $$("[data-ctx-file]").forEach((el) => el.onclick = () => previewFile(el.dataset.ctxFile, el.textContent.trim()));
+    return;
+  }
+  if (ctxTab === "kb") {
+    const r = api.octopKbList ? await api.octopKbList() : { items: [] };
+    const items = (r && r.items) || [];
+    box.innerHTML = items.map((k) => '<div class="ctx-file"><span class="ic">📚</span><span>' + esc(k.name) + "（" + (k.docs || 0) + "）</span></div>").join("") || '<div class="sub">还没有知识库</div>';
+    return;
+  }
+  const proj = (SNAP?.cfg?.projects || []).find((p) => p.id === ($("#chatProject") || {}).value) || (SNAP?.cfg?.projects || [])[0];
+  if (!proj) { box.innerHTML = '<div class="sub">先添加一个项目</div>'; return; }
+  const rf = await api.listTextFiles({ dir: proj.dir + "/产出" });
+  const items = (rf && rf.items) || [];
+  box.innerHTML = items.slice(0, 60).map((f) => '<div class="ctx-file" data-ctx-file="' + esc(f.path) + '"><span class="ic">🧾</span><span>' + esc(f.name) + "</span></div>").join("") || '<div class="sub">还没有产物（对话里点"保存到项目"）</div>';
+  $$("[data-ctx-file]").forEach((el) => el.onclick = () => previewFile(el.dataset.ctxFile, el.textContent.trim()));
+}
+
+async function loadKnowledge() {
+  const box = $('#kbList');
+  if (!api.octopKbList) { box.innerHTML = '<div class="sub">当前版本不支持</div>'; return; }
+  const r = await api.octopKbList();
+  const items = (r && r.items) || [];
+  box.innerHTML = items.map((k) => '<div class="item kb-item" data-kb="' + esc(k.id) + '"><div class="t"><b>' + esc(k.name) + '</b><span>文档 ' + (k.docs || 0) + '</span></div>' + (k.id === curKbId ? '<span class="badge ok">当前</span>' : "") + "</div>").join("") || '<div class="sub">还没有知识库，点右上角新建</div>';
+  $$('[data-kb]').forEach((el) => el.onclick = () => { curKbId = el.dataset.kb; loadKnowledge(); loadKbDocs(); });
+}
+async function loadKbDocs() {
+  const box = $('#kbDocs');
+  if (!curKbId) { box.innerHTML = '<div class="sub">选一个知识库查看文档</div>'; return; }
+  const r = await api.octopKbDocs({ kbId: curKbId });
+  const items = (r && r.items) || [];
+  const title = $("#kbDocsTitle");
+  if (title) title.textContent = "文档（" + items.length + "）";
+  box.innerHTML = items.map((d) => '<div class="item"><div class="t"><b>' + esc(d.name) + '</b><span>' + esc(d.status) + " · " + Math.round((d.size || 0) / 1024) + "KB · 分片 " + (d.chunks || 0) + "</span></div></div>").join("") || '<div class="sub">还没有文档，点「上传本地文件」</div>';
+}
+
+// ── 专家广场页 ───────────────────────────
+async function loadExpertsPage() {
+  const box = $('#expertGrid');
+  if (!api.octopExperts) { box.innerHTML = '<div class="sub">当前版本不支持</div>'; return; }
+  const r = await api.octopExperts();
+  const items = (r && r.items) || [];
+  box.innerHTML = items.map((e) => '<div class="expert-card"><b>' + esc(e.name) + '</b><span>' + esc(e.desc || "") + '</span><button class="btn ghost" data-use-expert="' + esc(e.id) + '">开始对话</button></div>').join("") || '<div class="sub">没有专家</div>';
+  $$("[data-use-expert]").forEach((b) => b.onclick = () => {
+    const sel = $("#chatExpert");
+    if (sel) { sel.value = b.dataset.useExpert; pickedSkills = []; renderSkillCount(); }
+    go('chat');
+    toast('已选用该专家，直接说要做的事');
+  });
+}
+
 async function loadSkills() {
   if (api.octopSkills) {
     const r = await api.octopSkills();
@@ -859,6 +929,47 @@ function bind() {
   };
   const mo = $('#mcpOn');
   if (mo) mo.onchange = async () => { const r = await api.mcpToggle(mo.checked); toast(r && r.ok ? (mo.checked ? 'MCP 已启用' : 'MCP 已关闭') : '操作失败'); await refresh(); };
+
+  // 知识库 / 专家页 按钮
+  const kbNew = $("#btnKbNew");
+  if (kbNew) kbNew.onclick = () => askName("知识库名称", "团队知识库", async (name) => {
+    const r = await api.octopKbCreate({ name: name || "知识库", description: "" });
+    toast(r && r.ok ? "已创建知识库" : ("创建失败: " + ((r && r.error) || "")));
+    loadKnowledge();
+  });
+  const kbUp = $("#btnKbUpload");
+  if (kbUp) kbUp.onclick = async () => {
+    if (!curKbId) { toast("先选一个知识库"); return; }
+    const p = (SNAP?.cfg?.projects || [])[0];
+    if (!p) { toast("先添加一个项目"); return; }
+    const rf = await api.listTextFiles({ dir: p.dir });
+    const items = (rf && rf.items) || [];
+    if (!items.length) { toast("项目里没有文本文件"); return; }
+    askName("上传哪个文件？（序号 1-" + items.length + "）", "1", async (v) => {
+      const f = items[parseInt(v, 10) - 1];
+      if (!f) { toast("序号不对"); return; }
+      const rd = await api.readFile({ file: f.path, max: 200000 });
+      if (!rd || !rd.ok) { toast("读取失败"); return; }
+      const up = await api.octopKbUpload({ kbId: curKbId, name: f.name, content: rd.content, format: "md" });
+      toast(up && up.ok ? "已上传" : "上传失败");
+      loadKbDocs(); loadKnowledge();
+    });
+  };
+  const er = $("#btnExpertRefresh");
+  if (er) er.onclick = loadExpertsPage;
+  const oc = $("#btnOpenCaps");
+  if (oc) oc.onclick = () => go("capabilities");
+
+  const ct = $$('.ctx-tab');
+  ct.forEach(function (b) { b.onclick = function () {
+    ct.forEach(function (x) { x.classList.remove('active'); });
+    b.classList.add('active');
+    ctxTab = b.dataset.ctx;
+    renderContext();
+  }; });
+  const cproj = $('#chatProject');
+  if (cproj) cproj.onchange = function () { renderContext(); };
+  renderContext();
   $('#btnSyncSkills').onclick = async () => { await api.heartbeat(); await loadSkills(); toast('技能已同步'); };
   $('#btnRunLocal').onclick = () => toast('本地执行：下一步接执行器');
   api.onTool && api.onTool((d) => {

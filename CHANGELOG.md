@@ -5,6 +5,32 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ---
 
+## [0.29.0] - 2026-10-24
+
+### 中文
+
+**UI 按 WorkBuddy 形态重构（第一阶段）**
+- 对话页改为**三栏工作台**：左「会话列表」+ 中「对话」+ 右「上下文面板」
+- 右键上下文面板支持三个标签：**文件**（项目文件树，点击预览）、**知识库**（列表与文档数）、**产物**（项目 产出/ 目录）
+- 新增「**知识库**」功能页：新建知识库、从本地项目上传文件、查看文档状态与分片数
+- 新增「**专家广场**」：22 个专家卡片，点「开始对话」自动切换专家
+- 原「云端能力」页降级为 **设置 → 诊断**（接口自查用，不再是主功能）
+- 视觉打磨：卡片圆角/阴影、渐变主按钮、消息气泡、滚动条、导航高亮、悬停反馈
+- 修复：会话头部标题被挤压成竖排的布局问题
+
+### English
+
+**WorkBuddy-style UI (phase 1)**
+- Chat is now a **three-column workbench**: session list + chat + context panel
+- Context panel tabs: **Files** (project tree with preview), **Knowledge bases**, **Artifacts** (产出 folder)
+- New **Knowledge base** page: create bases, upload local files, view document status and chunk counts
+- New **Expert plaza**: 22 expert cards; click Start chat to switch experts
+- The old capabilities page moved to **Settings → Diagnostics**
+- Visual polish: rounded cards, soft shadows, gradient primary buttons, chat bubbles, scrollbars, nav highlight, hover feedback
+- Fixed a layout bug where the chat header text was squeezed vertically
+
+---
+
 ## [0.28.0] - 2026-10-24
 
 ### 中文

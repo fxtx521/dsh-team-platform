@@ -722,6 +722,22 @@ ipcMain.handle('octop:browserInstall', async () => {
   return { ok: r.ok, data: r.data };
 });
 
+
+// ── 知识库（产品化页面）──────────────────────────
+ipcMain.handle("octop:kbList", async () => {
+  const r = await octopFetch("GET", "/api/knowledge-bases");
+  const d = r.data || [];
+  const list = Array.isArray(d) ? d : (d.items || []);
+  return { ok: r.ok, items: list.map((k) => ({ id: k.id, name: k.name || k.title, docs: k.doc_count || 0 })) };
+});
+
+ipcMain.handle("octop:kbDocs", async (_e, p) => {
+  const r = await octopFetch("GET", "/api/knowledge-bases/" + encodeURIComponent(p.kbId) + "/documents");
+  const d = r.data || [];
+  const list = Array.isArray(d) ? d : (d.items || []);
+  return { ok: r.ok, items: list.map((x) => ({ id: x.id, name: x.filename || x.path, status: x.status || "", size: x.byte_size || 0, chunks: x.chunk_count || 0 })) };
+});
+
 ipcMain.handle('octop:kbUpload', async (_e, { kbId, name, content, format }) => {
   const r = await octopFetch("POST", "/api/knowledge-bases/" + encodeURIComponent(kbId) + "/documents/text",
     { name: name || "未命名.txt", content: String(content || ""), format: format || "txt" });
