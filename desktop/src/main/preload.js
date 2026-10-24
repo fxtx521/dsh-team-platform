@@ -35,7 +35,7 @@ contextBridge.exposeInMainWorld('wb', {
   tasks: () => ipcRenderer.invoke('cloud:tasks'),
   skills: () => ipcRenderer.invoke('cloud:skills'),
   octopMemory: () => ipcRenderer.invoke('octop:memory'),
-  octopCapabilities: () => ipcRenderer.invoke('octop:capabilities'),
+  octopCapabilities: (p) => ipcRenderer.invoke('octop:capabilities', p),
   octopSkills: (p) => ipcRenderer.invoke('octop:skills', p),
   octopCandidateAction: (p) => ipcRenderer.invoke('octop:candidateAction', p),
   skillStats: () => ipcRenderer.invoke('cloud:skillStats'),

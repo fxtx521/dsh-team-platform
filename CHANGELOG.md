@@ -5,6 +5,22 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ---
 
+## [0.19.1] - 2026-10-24
+
+### 中文
+
+- **知识库接入**：`GET /api/knowledge-bases` 列表 + `capability` 状态（当前 0 个，向量模型未启用）。
+- **技能市场搜索**：`GET /api/skill-packages/hub/search?q=…`，能力页可直接搜技能包并查看分类与描述。
+- 能力页重构：拆出渲染函数，搜索后可原地刷新。
+
+### English
+
+- **Knowledge bases wired in**: list via `GET /api/knowledge-bases` plus `capability` status (currently 0 bases; embedding model not configured).
+- **Skill hub search**: `GET /api/skill-packages/hub/search?q=…`; the capabilities page can search packages and show category/description.
+- Capabilities page refactored to re-render in place after searching.
+
+---
+
 ## [0.19.0] - 2026-10-24
 
 ### 中文

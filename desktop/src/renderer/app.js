@@ -300,12 +300,20 @@ function showTask(id) {
   $('#tdSteps').innerHTML = '<div class="tl"><b>任务创建</b><span>' + fmtTime(t.created_at) + '</span></div>' + (t.status === 'done' ? '<div class="tl"><b>执行完成</b><span>结果已回传云端</span></div>' : '<div class="tl"><b>执行中…</b></div>');
 }
 async function loadCapabilities() {
-  const box = $('#capsBody');
-  if (!api.octopCapabilities) { box.innerHTML = '<div class="sub">当前版本不支持</div>'; return; }
-  box.innerHTML = '<div class="sub">加载中…</div>';
+  if (!api.octopCapabilities) { $('#capsBody').innerHTML = '<div class="sub">当前版本不支持</div>'; return; }
+  $('#capsBody').innerHTML = '<div class="sub">加载中…</div>';
   const c = await api.octopCapabilities();
+  loadCapabilitiesWith(c);
+}
+
+function loadCapabilitiesWith(c) {
+  const box = $('#capsBody');
   const sec = (title, body) => '<div style="margin:14px 0 6px;font-weight:600">' + title + '</div>' + body;
   let html = '';
+  const kb = c.knowledge || {};
+  html += sec('知识库（' + (kb.count || 0) + '）',
+    ((kb.items || []).map((k) => '<div class="item"><div class="t"><b>' + esc(k.name || k.id) + '</b><span>文档 ' + (k.docs || 0) + '</span></div></div>').join('') || '<div class="sub">还没有知识库</div>') +
+    '<div class="sub" style="margin-top:6px">能力状态：' + (kb.usable ? '可用' : '未启用（需要先在 Octop 里配置向量模型）') + '</div>');
   const subs = c.subagents || {};
   html += sec('子代理（' + (subs.count || 0) + '）',
     (subs.sample || []).slice(0, 8).map((s) => '<div class="item"><div class="t"><b>' + esc(s.name || s.slug) + '</b><span>' + esc(s.div || '') + '</span></div></div>').join('') || '<div class="sub">无</div>');
@@ -313,12 +321,24 @@ async function loadCapabilities() {
   html += sec('模型供应商', (prov.items || []).map((p) => '<div class="item"><div class="t"><b>' + esc(p.name || p.id) + '</b></div>' + (p.active ? '<span class="badge ok">使用中</span>' : '') + '</div>').join('') || '<div class="sub">无</div>');
   const ch = c.channels || {};
   html += sec('渠道（当前助理）', (ch.items || []).length ? (ch.items || []).map((x) => '<div class="item"><div class="t"><b>' + esc(x.name || x.kind) + '</b></div></div>').join('') : '<div class="sub">未配置渠道（下一步接入扫码/机器人创建）</div>');
+  const sh = c.skillhub || {};
+  html += sec('技能市场（搜索）',
+    '<div style="display:flex;gap:8px;margin-bottom:8px"><input id="hubQ" placeholder="搜技能包，如 SOP / 台账" style="flex:1;border:1px solid #dfe3ea;border-radius:10px;padding:8px 10px;font-size:13px" /><button class="btn ghost" id="hubGo">搜索</button></div>' +
+    ((sh.items || []).map((s) => '<div class="item"><div class="t"><b>' + esc(s.name) + '</b><span>' + esc(s.category) + ' · ' + esc(s.desc) + '</span></div></div>').join('') || '<div class="sub">输入关键词搜索</div>'));
   const br = c.browser || {};
   html += sec('浏览器自动化', '<div class="sub">' + esc(JSON.stringify(br.data || {}).slice(0, 200)) + '</div>');
   const tm = c.terminal || {};
   html += sec('终端', '<div class="sub">' + esc(JSON.stringify(tm.data || {}).slice(0, 200)) + '</div>');
   box.innerHTML = html;
   const b = $('#btnCapsRefresh'); if (b) b.onclick = loadCapabilities;
+  const go = $('#hubGo');
+  if (go) go.onclick = async () => {
+    const q = ($('#hubQ') || {}).value || 'SOP';
+    box.innerHTML = '<div class="sub">搜索中…</div>';
+    const c2 = await api.octopCapabilities({ search: q });
+    // 直接重渲染
+    loadCapabilitiesWith(c2);
+  };
 }
 
 async function loadExperiences() {

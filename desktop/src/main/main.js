@@ -421,7 +421,7 @@ async function octopCandidateAction(id, action) {
 
 
 // ── 云端能力聚合（子代理/供应商/渠道/浏览器/终端/备份）────
-async function octopCapabilities() {
+async function octopCapabilities(search) {
   const aid = await ensureOctopAgent();
   const out = { ok: true, agentId: aid };
   const safe = async (fn) => { try { return await fn(); } catch (e) { return { ok: false, error: e.message }; } };
@@ -456,6 +456,23 @@ async function octopCapabilities() {
     const r = await octopFetch("GET", "/api/agents/" + aid + "/terminal/context");
     return { ok: r.ok, data: r.data };
   });
+  out.knowledge = await safe(async () => {
+    const [list, cap] = await Promise.all([
+      octopFetch("GET", "/api/knowledge-bases"),
+      octopFetch("GET", "/api/knowledge-bases/capability"),
+    ]);
+    const d = list.data || [];
+    const items = Array.isArray(d) ? d : (d.items || []);
+    return { ok: list.ok, count: items.length,
+             items: items.map((k) => ({ id: k.id, name: k.name || k.title, docs: k.document_count || 0 })),
+             usable: (cap.data && cap.data.usable) || false };
+  });
+  out.skillhub = await safe(async () => {
+    const r = await octopFetch("GET", "/api/skill-packages/hub/search?q=" + encodeURIComponent(search || "SOP") + "&limit=8");
+    const d = r.data || [];
+    const list = Array.isArray(d) ? d : (d.items || []);
+    return { ok: r.ok, items: list.map((s) => ({ name: s.name || s.slug, category: s.category || "", desc: String(s.description || "").slice(0, 80) })) };
+  });
   out.backup = await safe(async () => {
     const r = await octopFetch("GET", "/api/admin/backup/status");
     return { ok: r.ok, data: r.data };
@@ -463,7 +480,7 @@ async function octopCapabilities() {
   return out;
 }
 
-ipcMain.handle('octop:capabilities', async () => await octopCapabilities());
+ipcMain.handle('octop:capabilities', async (_e, p) => await octopCapabilities(p && p.search));
 
 ipcMain.handle('octop:memory', async () => await octopMemoryCandidates());
 ipcMain.handle('octop:skills', async (_e, p) => await octopSkills(p && p.expertId));
