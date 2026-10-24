@@ -317,7 +317,9 @@ function loadCapabilitiesWith(c) {
   const at = c.agentTools || {};
   html += sec('助理已装工具（' + (at.count || 0) + '）', (at.items || []).map((t) => '<div class="item"><div class="t"><b>' + esc(t.name) + '</b><span>' + esc(t.desc) + '</span></div></div>').join('') || '<div class="sub">未安装工具插件</div>');
   const us = c.users || {};
-  html += sec('账号（' + (us.count || 0) + '）', (us.items || []).map((u) => '<div class="item"><div class="t"><b>' + esc(u.name || u.username) + '</b><span>' + esc(u.username) + '</span></div><span class="badge ok">' + esc(u.role) + '</span></div>').join('') || '<div class="sub">无</div>');
+  html += sec('账号（' + (us.count || 0) + '）',
+    (us.items || []).map((u) => '<div class="item"><div class="t"><b>' + esc(u.name || u.username) + '</b><span>' + esc(u.username) + '</span></div><span class="badge ok">' + esc(u.role) + '</span></div>').join('') || '<div class="sub">无</div>') +
+    '<div style="margin-top:8px"><input id="nuName" placeholder="新账号用户名" style="border:1px solid #dfe3ea;border-radius:10px;padding:8px 10px;font-size:13px;width:200px" /> <button class="btn ghost" id="btnUserCreate">新建账号</button></div>';
   const bk = c.backupState || {};
   html += sec('备份', '<div class="sub">' + (bk.busy ? '正在备份…' : '空闲') + ' · 备份文件 ' + (bk.count || 0) + ' 个' + (bk.latest ? ' · 最近：' + esc(bk.latest) : '') + '</div>');
   const pl = c.plugins || {};
@@ -344,7 +346,11 @@ function loadCapabilitiesWith(c) {
   const prov = c.providers || {};
   html += sec('模型供应商', (prov.items || []).map((p) => '<div class="item"><div class="t"><b>' + esc(p.name || p.id) + '</b></div>' + (p.active ? '<span class="badge ok">使用中</span>' : '') + '</div>').join('') || '<div class="sub">无</div>');
   const ch = c.channels || {};
-  html += sec('渠道（当前助理）', (ch.items || []).length ? (ch.items || []).map((x) => '<div class="item"><div class="t"><b>' + esc(x.name || x.kind) + '</b></div></div>').join('') : '<div class="sub">未配置渠道（下一步接入扫码/机器人创建）</div>');
+  html += sec('渠道（当前助理）',
+    ((ch.items || []).map((x) => '<div class="item"><div class="t"><b>' + esc(x.name || x.kind) + '</b><span>' + esc(x.kind) + '</span></div>' +
+      '<button class="mini" data-chtest="' + esc(x.id) + '">测试</button> <button class="mini" data-chdel="' + esc(x.id) + '">删除</button></div>').join('') || '<div class="sub">还没有渠道</div>') +
+    '<div style="margin-top:8px"><input id="chKind" placeholder="类型：feishu / wecom / weixin / dingtalk" style="border:1px solid #dfe3ea;border-radius:10px;padding:8px 10px;font-size:13px;width:260px" /> <button class="btn ghost" id="btnChCreate">新建渠道</button></div>' +
+    '<div class="sub" style="margin-top:6px">渠道需要凭证（如飞书 app_id/app_secret），创建后在 Octop 控制台补凭证即可连通。</div>');
   const sh = c.skillhub || {};
   html += sec('技能市场（搜索）',
     '<div style="display:flex;gap:8px;margin-bottom:8px"><input id="hubQ" placeholder="搜技能包，如 SOP / 台账" style="flex:1;border:1px solid #dfe3ea;border-radius:10px;padding:8px 10px;font-size:13px" /><button class="btn ghost" id="hubGo">搜索</button></div>' +
@@ -355,6 +361,29 @@ function loadCapabilitiesWith(c) {
   html += sec('终端', '<div class="sub">' + esc(JSON.stringify(tm.data || {}).slice(0, 200)) + '</div>');
   box.innerHTML = html;
   const b = $('#btnCapsRefresh'); if (b) b.onclick = loadCapabilities;
+  const cc2 = $('#btnChCreate');
+  if (cc2) cc2.onclick = async () => {
+    const kind = ($('#chKind') || {}).value || 'feishu';
+    const r = await api.octopChannelCreate({ kind, name: kind });
+    toast(r && r.ok ? ('已创建渠道: ' + kind) : ('创建失败: ' + ((r && r.error) || '')));
+    loadCapabilities();
+  };
+  $$('[data-chtest]').forEach((b) => b.onclick = async () => {
+    const r = await api.octopChannelTest({ id: b.dataset.chtest });
+    toast(r && r.ok ? '测试请求已发出' : ('测试失败: ' + ((r && r.error) || '')));
+  });
+  $$('[data-chdel]').forEach((b) => b.onclick = async () => {
+    await api.octopChannelDelete({ id: b.dataset.chdel });
+    toast('已删除渠道'); loadCapabilities();
+  });
+  const uc = $('#btnUserCreate');
+  if (uc) uc.onclick = async () => {
+    const un = ($('#nuName') || {}).value;
+    if (!un) { toast('请填用户名'); return; }
+    const r = await api.octopUserCreate({ username: un, password: 'Init-' + Math.random().toString(36).slice(2, 10), role: 'user' });
+    toast(r && r.ok ? ('已创建账号: ' + un) : ('创建失败: ' + ((r && r.error) || '')));
+    loadCapabilities();
+  };
   const bi = $('#btnBrowserInstall');
   if (bi) bi.onclick = async () => {
     bi.textContent = '安装中…（几分钟）';

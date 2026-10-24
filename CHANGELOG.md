@@ -5,6 +5,24 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ---
 
+## [0.24.0] - 2026-10-24
+
+### 中文
+
+**渠道与账号管理（写操作）**
+- 渠道：能力页可新建（飞书/企微/微信/钉钉）、测试连接、删除；实测创建 201、删除 204。
+- 渠道连通需要凭证（如飞书 app_id/app_secret），创建后补凭证即可用。
+- 账号：能力页可列出账号并新建（用户名 + 随机初始密码 + 角色）。实测创建成功。
+
+### English
+
+**Channel and account management (write operations)**
+- Channels: create (Feishu/WeCom/WeChat/DingTalk), test, delete from the capabilities page; verified create 201 and delete 204.
+- Channels require credentials (e.g. Feishu app_id/app_secret); add them after creation.
+- Accounts: list and create users (username + random initial password + role); verified creation.
+
+---
+
 ## [0.23.0] - 2026-10-24
 
 ### 中文

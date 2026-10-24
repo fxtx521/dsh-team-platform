@@ -33,7 +33,7 @@
 | 子代理目录 | `/api/subagent-catalog` | ✅ |
 | 当前助理子代理 | `/api/agents/{id}/subagents` | ✅ |
 | 模型供应商 | `/api/providers` | ✅ |
-| 渠道 | `/api/agents/{id}/channels`、`/api/channels/plugin-kinds` | ✅ 列表可用（当前为空）|
+| 渠道 | `/api/agents/{id}/channels` | ✅ 可建/测/删（需凭证）|
 | 浏览器 | `/api/browser/env-status`、`/api/browser/install` | ✅ Chromium 已安装，实测可抓网页 |
 | 终端 | `/api/agents/{id}/terminal/context` | ✅ |
 | 用户 | `/api/users` | ✅ 管理员可见 |

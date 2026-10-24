@@ -544,6 +544,41 @@ async function octopCapabilities(search) {
 
 ipcMain.handle('octop:capabilities', async (_e, p) => await octopCapabilities(p && p.search));
 
+
+// ── 渠道 / 用户 / 供应商 写操作 ─────────────────────────
+ipcMain.handle("octop:channelCreate", async (_e, p) => {
+  const aid = await ensureOctopAgent();
+  const body = { kind: p.kind, name: p.name || p.kind, enabled: true };
+  if (p.credentials && typeof p.credentials === "object") body.credentials = p.credentials;
+  const r = await octopFetch("POST", "/api/agents/" + aid + "/channels", body);
+  if (r.ok) log("已创建渠道: " + p.kind);
+  return { ok: r.ok, data: r.data, error: r.ok ? "" : JSON.stringify(r.data).slice(0, 200) };
+});
+
+ipcMain.handle("octop:channelDelete", async (_e, p) => {
+  const aid = await ensureOctopAgent();
+  const r = await octopFetch("DELETE", "/api/agents/" + aid + "/channels/" + encodeURIComponent(p.id), null);
+  return { ok: r.ok, data: r.data };
+});
+
+ipcMain.handle("octop:channelTest", async (_e, p) => {
+  const aid = await ensureOctopAgent();
+  const r = await octopFetch("POST", "/api/agents/" + aid + "/channels/" + encodeURIComponent(p.id) + "/test", {});
+  return { ok: r.ok, data: r.data, error: r.ok ? "" : JSON.stringify(r.data).slice(0, 200) };
+});
+
+ipcMain.handle("octop:userCreate", async (_e, p) => {
+  const r = await octopFetch("POST", "/api/users", {
+    username: p.username, password: p.password, role: p.role || "user", display_name: p.display_name || p.username,
+  });
+  return { ok: r.ok, data: r.data, error: r.ok ? "" : JSON.stringify(r.data).slice(0, 200) };
+});
+
+ipcMain.handle("octop:userToggle", async (_e, p) => {
+  const r = await octopFetch("PATCH", "/api/users/" + encodeURIComponent(p.id), { disabled: !p.enabled });
+  return { ok: r.ok, data: r.data };
+});
+
 ipcMain.handle('octop:browserInstall', async () => {
   log('开始安装浏览器运行时…');
   const r = await octopFetch("POST", "/api/browser/install", {});
