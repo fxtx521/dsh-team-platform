@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld('wb', {
   saveBrief: (p) => ipcRenderer.invoke('project:saveBrief', p),
   onTool: (cb) => ipcRenderer.on('app:tool', (_e, d) => cb(d)),
   mySummary: () => ipcRenderer.invoke('cloud:mySummary'),
+  me: () => ipcRenderer.invoke('cloud:me'),
+  expAction: (p) => ipcRenderer.invoke('cloud:expAction', p),
   saveOutput: (p) => ipcRenderer.invoke('project:saveOutput', p),
   listTextFiles: (p) => ipcRenderer.invoke('project:listTextFiles', p),
   tasks: () => ipcRenderer.invoke('cloud:tasks'),

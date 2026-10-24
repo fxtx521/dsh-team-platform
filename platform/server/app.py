@@ -33,6 +33,9 @@ CREATE TABLE IF NOT EXISTS skills(
 CREATE TABLE IF NOT EXISTS experiences(
   id TEXT PRIMARY KEY, task_id TEXT, title TEXT, kind TEXT, content TEXT,
   status TEXT DEFAULT 'pending', skill_id TEXT, created_at TEXT);
+CREATE TABLE IF NOT EXISTS users(
+  id TEXT PRIMARY KEY, username TEXT UNIQUE, display_name TEXT, role TEXT DEFAULT 'employee',
+  dept TEXT, created_at TEXT);
 CREATE TABLE IF NOT EXISTS chat_sessions(
   id TEXT PRIMARY KEY, session_id TEXT, thread_id TEXT, created_at TEXT);
 CREATE TABLE IF NOT EXISTS skill_deliveries(
@@ -72,6 +75,22 @@ def init():
                   (uuid.uuid4().hex, "客户资料核查 SOP", "sop", 1,
                    "1) 工商信息核对\n2) 司法涉诉查询\n3) 经营异常\n4) 出具报告（模板：核查报告_v2.docx）", now()))
         c.commit()
+    # 员工账号 / 终端绑定（幂等）
+    try:
+        cols = [r[1] for r in c.execute("PRAGMA table_info(terminals)")]
+        if "user_id" not in cols:
+            c.execute("ALTER TABLE terminals ADD COLUMN user_id TEXT")
+        for t in c.execute("SELECT id, user_name FROM terminals").fetchall():
+            if not c.execute("SELECT id FROM users WHERE username=?", (t["id"],)).fetchone():
+                c.execute("INSERT INTO users(id,username,display_name,role,dept,created_at) VALUES(?,?,?,?,?,?)",
+                          (uuid.uuid4().hex, t["id"], t["user_name"] or "未命名", "employee", "", now()))
+            c.execute("UPDATE terminals SET user_id=? WHERE id=?", (t["id"], t["id"]))
+        if not c.execute("SELECT id FROM users WHERE username='admin'").fetchone():
+            c.execute("INSERT INTO users(id,username,display_name,role,dept,created_at) VALUES(?,?,?,?,?,?)",
+                      (uuid.uuid4().hex, "admin", "管理员", "admin", "", now()))
+        c.commit()
+    except Exception as e:
+        print("users init:", e)
     c.close()
 
 init()
@@ -359,9 +378,9 @@ async def list_experience(request: Request, status: str = ""):
     return {"ok": True, "items": [dict(r) for r in rows]}
 
 @app.post("/v1/experience/{exp_id}/approve")
-async def approve_experience(exp_id: str, request: Request):
-    """审核通过：把经验候选固化成技能（进技能库 → 自动下发终端）。"""
-    require_admin(request)
+async def approve_experience(exp_id: str, request: Request, x_api_key: Optional[str] = Header(None)):
+    """审核通过：把经验候选固化成技能（管理员或主管）。"""
+    who, role = require_perm(request, x_api_key, "experience.approve")
     body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
     c = conn()
     e = c.execute("SELECT * FROM experiences WHERE id=?", (exp_id,)).fetchone()
@@ -410,9 +429,9 @@ async def dedupe_skills(request: Request):
     return {"ok": True, "removed": removed, "left": total}
 
 @app.post("/v1/experience/batch-approve")
-async def batch_approve(request: Request):
+async def batch_approve(request: Request, x_api_key: Optional[str] = Header(None)):
     """批量审核：低风险经验自动入库成技能，敏感类留人工。"""
-    require_admin(request)
+    who, role = require_perm(request, x_api_key, "experience.approve")
     body = await request.json() if request.headers.get("content-type","").startswith("application/json") else {}
     limit = int(body.get("limit") or 200)
     sensitive = ["客户名称", "身份证", "银行卡", "工资", "报价金额", "合同金额", "密码", "法人"]
@@ -846,6 +865,48 @@ async def _startup_bg():
             await _asyncio.sleep(1800)
     _asyncio.create_task(loop())
 
+ROLE_PERMS = {
+    "employee": ["task.run", "task.view.own", "experience.view", "skill.sync"],
+    "reviewer": ["task.run", "task.view.own", "task.view.team", "experience.view", "experience.approve", "skill.sync", "report.view"],
+    "admin": ["*"],
+}
+
+def user_of_terminal(t) -> dict:
+    c = conn()
+    try:
+        u = c.execute("SELECT * FROM users WHERE username=?", (t["user_id"] if ("user_id" in t.keys() and t["user_id"]) else t["id"],)).fetchone()
+    except Exception:
+        u = None
+    c.close()
+    if u:
+        return {"username": u["username"], "display_name": u["display_name"], "role": u["role"], "dept": u["dept"]}
+    return {"username": t["id"], "display_name": t["user_name"] or "员工", "role": "employee", "dept": ""}
+
+def perms_for(role: str):
+    return ["*"] if role == "admin" else ROLE_PERMS.get(role, ROLE_PERMS["employee"])
+
+def require_perm(request: Request, x_api_key: Optional[str], perm: str):
+    """管理员 Cookie 或带角色权限的终端 Key。"""
+    try:
+        require_admin(request)
+        return ("管理员", "admin")
+    except HTTPException:
+        pass
+    t = auth(x_api_key)
+    u = user_of_terminal(t)
+    ps = perms_for(u["role"])
+    if "*" not in ps and perm not in ps:
+        raise HTTPException(403, "no permission: " + perm)
+    return (u["display_name"] or u["username"], u["role"])
+
+@app.get("/v1/me")
+async def me(x_api_key: Optional[str] = Header(None)):
+    t = auth(x_api_key)
+    u = user_of_terminal(t)
+    return {"ok": True, "user": u,
+            "terminal": {"id": t["id"], "hostname": t["hostname"], "employee_no": t["employee_no"]},
+            "permissions": perms_for(u["role"])}
+
 @app.get("/v1/my/summary")
 async def my_summary(x_api_key: Optional[str] = Header(None)):
     """员工端看自己的数据：任务、步骤、技能、经验统计。"""
@@ -1140,8 +1201,8 @@ async def skills_admin(request: Request):
     return {"ok": True, "items": [dict(r) for r in rows]}
 
 @app.post("/v1/experience/{exp_id}/reject")
-async def reject_experience(exp_id: str, request: Request):
-    require_admin(request)
+async def reject_experience(exp_id: str, request: Request, x_api_key: Optional[str] = Header(None)):
+    who, role = require_perm(request, x_api_key, "experience.approve")
     c = conn()
     c.execute("UPDATE experiences SET status='rejected' WHERE id=?", (exp_id,))
     c.commit(); c.close()

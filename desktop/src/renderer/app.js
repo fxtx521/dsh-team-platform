@@ -36,7 +36,13 @@ const api = window.wb || {
   reveal: async () => true,
   runCmd: async () => ({ ok: true, output: '（预览模式，未执行真实命令）' }),
   chat: async (m) => ({ ok: true, data: { reply: '（预览模式）收到：' + m, elapsed_ms: 3200 } }),
+  me: async () => ({ ok: true, data: { user: { username: 'u1', display_name: '演示员工', role: 'reviewer', dept: '' }, terminal: { id: 't1', hostname: 'demo-pc', employee_no: 'ZY-0001' }, permissions: ['experience.approve', 'task.run', 'skill.sync'] } }),
+  expAction: async () => ({ ok: true }),
   mySummary: async () => ({ ok: true, data: {
+    experiences: [
+      { id: 'e1', title: '客户核查 · 可固化', status: 'pending', brief: '适用场景：客户核查\n执行链路：web.search → octop.agent' },
+      { id: 'e2', title: '台账整理 · 可固化', status: 'approved', brief: '适用场景：台账整理…' },
+    ],
     stats: { total_tasks: 102, today_tasks: 59, skills: 7, experiences: 61, pending_experience: 6 },
     tasks: [
       { id: 't1', title: '客户资料核查 · 山东鼎晟机械', status: 'done', created_at: new Date().toISOString() },
@@ -66,6 +72,7 @@ const api = window.wb || {
 };
 
 let SNAP = null;
+let ME = null;  // 当前员工身份与权限
 let curView = 'home';
 let curProject = null;   // {id,name,dir}
 let curRel = '.';
@@ -138,7 +145,7 @@ function renderConn() {
   const pill = $('#connPill'); const st = SNAP?.state || {};
   pill.className = 'conn ' + (st.online ? 'on' : 'off');
   pill.querySelector('span').textContent = st.online ? '已连接云端' : '未连接';
-  $('#whoBox').textContent = SNAP?.cfg?.employeeName || '未设置员工';
+  $('#whoBox').textContent = ME ? (ME.user.display_name + ' · ' + ({ employee: '员工', reviewer: '主管', admin: '管理员' }[ME.user.role] || ME.user.role)) : (SNAP?.cfg?.employeeName || '未设置员工');
   $('#verBox').textContent = 'v' + (SNAP?.version || '0.1.0');
   $('#aboutVer').textContent = SNAP?.version || '0.1.0';
   $('#aboutPlat').textContent = SNAP?.platform || '-';
@@ -229,7 +236,15 @@ async function loadExperiences() {
   const st = d.stats || {};
   $('#expStats').innerHTML = `<span>经验总数 <b>${st.experiences || 0}</b></span><span>待审 <b>${st.pending_experience || 0}</b></span><span>技能 <b>${st.skills || 0}</b></span>`;
   const badge = (s) => s === 'approved' ? '<span class="badge ok">已入库</span>' : (s === 'rejected' ? '<span class="badge err">已驳回</span>' : '<span class="badge run">待审</span>');
-  $('#expList').innerHTML = exps.map((e) => `<div class="item" style="align-items:flex-start"><div class="t"><b>${esc(cleanTitle(e.title))}</b><span style="white-space:pre-wrap;display:block;margin-top:4px;color:#6b7280">${esc((e.brief || '').slice(0, 160))}</span></div>${badge(e.status)}</div>`).join('') || '<div class="sub">还没有经验，多在客户端干活会自动沉淀</div>';
+  const canApprove = !!(ME && (ME.permissions || []).includes('*') || (ME.permissions || []).includes('experience.approve'));
+  $('#expList').innerHTML = exps.map((e) => `<div class="item" style="align-items:flex-start"><div class="t"><b>${esc(cleanTitle(e.title))}</b><span style="white-space:pre-wrap;display:block;margin-top:4px;color:#6b7280">${esc((e.brief || '').slice(0, 160))}</span>${canApprove && e.status === 'pending' ? `<span style="display:inline-flex;gap:6px;margin-top:8px"><button class="mini" data-exp="${e.id}" data-act="approve">通过</button><button class="mini" data-exp="${e.id}" data-act="reject">驳回</button></span>` : ''}</div>${badge(e.status)}</div>`).join('') || '<div class="sub">还没有经验，多在客户端干活会自动沉淀</div>';
+  $$('#expList [data-exp]').forEach((b) => {
+    b.onclick = async () => {
+      const r = await api.expAction({ id: b.dataset.exp, action: b.dataset.act });
+      toast(r && r.ok ? (b.dataset.act === 'approve' ? '已入库' : '已驳回') : ('操作失败：' + JSON.stringify(r && r.data || {}).slice(0, 80)));
+      loadExperiences();
+    };
+  });
   const b = $('#btnRefreshExp'); if (b) b.onclick = loadExperiences;
 }
 
@@ -530,9 +545,17 @@ function bind() {
   api.onLog && api.onLog((rec) => { if (SNAP?.state) { SNAP.state.log.unshift(rec); renderHome(); } });
   api.onGoto && api.onGoto((v) => go(v));
 }
+async function loadMe() {
+  try {
+    const r = await api.me ? await api.me() : null;
+    if (r && r.ok) { ME = r.data; renderConn(); }
+  } catch {}
+}
+
 (async function boot() {
   loadSessions();
   bind();
+  await loadMe();
   await refresh();
   const h = (location.hash || '').replace('#', '');
   go(h || 'chat');

@@ -339,6 +339,16 @@ ipcMain.handle('cloud:mySummary', async () => {
   return await api('GET', '/v1/my/summary');
 });
 
+ipcMain.handle('cloud:me', async () => {
+  return await api('GET', '/v1/me');
+});
+
+ipcMain.handle('cloud:expAction', async (_e, { id, action }) => {
+  const r = await api('POST', '/v1/experience/' + encodeURIComponent(id) + '/' + (action === 'approve' ? 'approve' : 'reject'), {});
+  if (r.ok) log('经验' + (action === 'approve' ? '通过' : '驳回') + ': ' + id.slice(0, 8));
+  return r;
+});
+
 ipcMain.handle('cloud:chat', async (_e, { message, sessionId, files, projectId }) => {
   const t = newTurn(message);
   for (const f of (files || [])) {
