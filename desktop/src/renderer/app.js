@@ -769,6 +769,22 @@ function bindChat() {
   const sel = $('#chatProject');
   const cfg = SNAP?.cfg || {};
   sel.innerHTML = (cfg.projects || []).map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('') || '<option value="">（先添加项目）</option>';
+  const mic = $('#btnMic');
+  if (mic) mic.onclick = async () => {
+    mic.textContent = '🔴';
+    const rec = await api.recordAudio({ seconds: 5 });
+    if (!rec || !rec.ok) { mic.textContent = '🎤'; toast(rec && rec.error ? rec.error : '录音失败'); return; }
+    mic.textContent = '…';
+    const st = await api.octopStt({ file: rec.file });
+    mic.textContent = '🎤';
+    if (st && st.ok) {
+      const inp = $('#chatInput');
+      inp.value = (inp.value ? inp.value + ' ' : '') + (st.text || '');
+      toast('已转文字');
+    } else {
+      toast('识别失败: ' + ((st && st.error) || ''));
+    }
+  };
   $('#chatSend').onclick = sendChat;
   const ba = $('#btnAttach');
   if (ba && !ba._bound) {

@@ -571,6 +571,56 @@ async function octopModels() {
 // ── 用量统计 / 上下文用量 / 语音 ───────────────────
 
 // ── 语音朗读（TTS + 本地播放）────────────────────
+
+// ── 语音输入（录音 + STT）──────────────────────────
+ipcMain.handle("local:record", async (_e, p) => {
+  const secs = Math.min(Math.max(Number((p && p.seconds) || 5), 1), 60);
+  const dir = path.join(app.getPath("userData"), "voice");
+  try { fs.mkdirSync(dir, { recursive: true }); } catch {}
+  const file = path.join(dir, "rec-" + Date.now() + ".wav");
+  const ff = process.platform === "win32" ? "ffmpeg" : "/opt/homebrew/bin/ffmpeg";
+  const args = process.platform === "win32"
+    ? ["-y", "-f", "dshow", "-i", "audio=default", "-t", String(secs), file]
+    : ["-y", "-f", "avfoundation", "-i", ":0", "-t", String(secs), file];
+  const ok = await new Promise((resolve) => {
+    const { spawn } = require("child_process");
+    const c = spawn(ff, args, { stdio: "ignore" });
+    c.on("exit", (code) => resolve(code === 0 && fs.existsSync(file)));
+    c.on("error", () => resolve(false));
+    setTimeout(() => { try { c.kill(); } catch {} }, (secs + 15) * 1000);
+  });
+  if (!ok) return { ok: false, error: "录音失败（检查麦克风权限 / ffmpeg）" };
+  log("录音完成: " + file);
+  return { ok: true, file };
+});
+
+ipcMain.handle("octop:stt", async (_e, p) => {
+  const f = String((p && p.file) || "");
+  if (!f || !fs.existsSync(f)) return { ok: false, error: "音频文件不存在" };
+  const data = fs.readFileSync(f);
+  const boundary = "----lishi" + Date.now();
+  const head = Buffer.from("--" + boundary + "\r\n" +
+    "Content-Disposition: form-data; name=\"audio\"; filename=\"" + path.basename(f) + "\"\r\n" +
+    "Content-Type: audio/wav\r\n\r\n");
+  const lang = Buffer.from("\r\n--" + boundary + "\r\n" +
+    "Content-Disposition: form-data; name=\"language\"\r\n\r\nzh-CN\r\n--" + boundary + "--\r\n");
+  const body = Buffer.concat([head, data, lang]);
+  const base = octopBase();
+  const url = new URL(base + "/api/voice/stt");
+  const resp = await new Promise((resolve) => {
+    const req = (url.protocol === "https:" ? require("https") : require("http")).request({
+      hostname: url.hostname, port: url.port, path: url.pathname, method: "POST",
+      headers: { "Content-Type": "multipart/form-data; boundary=" + boundary, "Content-Length": body.length, Authorization: "Bearer " + readCfg().octopToken },
+    }, (res) => { let b = ""; res.on("data", (c) => (b += c)); res.on("end", () => resolve({ status: res.statusCode, text: b })); });
+    req.on("error", (e) => resolve({ status: 0, text: e.message }));
+    req.write(body); req.end();
+  });
+  let parsed = {};
+  try { parsed = JSON.parse(resp.text); } catch {}
+  if (resp.status === 200 && parsed.text !== undefined) { log("STT: " + String(parsed.text).slice(0, 40)); return { ok: true, text: parsed.text }; }
+  return { ok: false, error: (parsed.error && (parsed.error.message || parsed.error.code)) || ("STT 失败 " + resp.status) };
+});
+
 ipcMain.handle("octop:tts", async (_e, p) => {
   const text = String((p && p.text) || "").slice(0, 2000);
   if (!text) return { ok: false, error: "文本为空" };

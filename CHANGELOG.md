@@ -5,6 +5,26 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ---
 
+## [0.28.0] - 2026-10-24
+
+### 中文
+
+**语音输入打通（录音 -> STT）**
+- 服务端配置小米 MiMo ASR 作为语音识别提供商（mimo-stt），并设置 stt=mimo-stt, tts=edge
+- 实测：用 TTS 生成的中文音频调用 /api/voice/stt，返回「你好，这是语音测试。」
+- 客户端对话输入框新增麦克风按钮：录 5 秒，自动转文字填入输入框（macOS 用 ffmpeg avfoundation，Windows 用 dshow）
+- 至此语音双向打通：TTS 朗读 + STT 输入
+
+### English
+
+**Voice input works (record -> STT)**
+- Configured Xiaomi MiMo ASR as the STT provider (mimo-stt) and set stt=mimo-stt, tts=edge
+- Verified: transcribing TTS-generated Chinese audio via /api/voice/stt returned 你好，这是语音测试。
+- Client chat input has a mic button: records 5 seconds and inserts the transcript (ffmpeg avfoundation on macOS, dshow on Windows)
+- Voice is now bidirectional: TTS playback + STT input
+
+---
+
 ## [0.27.0] - 2026-10-24
 
 ### 中文

@@ -41,6 +41,8 @@ contextBridge.exposeInMainWorld('wb', {
   octopModels: () => ipcRenderer.invoke('octop:models'),
   octopUsage: () => ipcRenderer.invoke('octop:usage'),
   octopTts: (p) => ipcRenderer.invoke('octop:tts', p),
+  octopStt: (p) => ipcRenderer.invoke('octop:stt', p),
+  recordAudio: (p) => ipcRenderer.invoke('local:record', p),
   playAudio: (p) => ipcRenderer.invoke('local:playAudio', p),
   octopContextUsage: (p) => ipcRenderer.invoke('octop:contextUsage', p),
   octopSetActiveModel: (p) => ipcRenderer.invoke('octop:setActiveModel', p),
