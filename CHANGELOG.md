@@ -5,6 +5,30 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ---
 
+## [0.12.0] - 2026-10-24
+
+### 中文
+
+**架构收敛：彻底停用自研后台，仓库瘦身。**
+
+- 停用并 disable 自研平台服务（账号/看板/任务/经验/技能下发全部下线）
+- 仓库只保留客户端与文档：`desktop/` + `docs/`，删除 `platform/`、`sites/`、`plugins/`、`tools/`
+- README 重写为「客户端直连 Octop + 内置 MCP」架构说明（中英双语）
+- 文档仅保留 `docs/octop-direct.md`（接口清单 / 迁移步骤 / 兼容策略）
+- 运行态：Octop（18090）与客户端内置 MCP（18991）不再依赖旧后台
+
+### English
+
+**Architecture consolidation: the self-hosted backend is fully retired; repository slimmed.**
+
+- Stopped and disabled the self-hosted platform (accounts / dashboard / tasks / experiences / skill distribution are gone)
+- Repo now only contains the client and docs: `desktop/` + `docs/`; removed `platform/`, `sites/`, `plugins/`, `tools/`
+- README rewritten for the "client connects directly to Octop + built-in MCP" architecture (Chinese + English)
+- Only `docs/octop-direct.md` kept (API inventory / migration / compatibility)
+- Runtime: Octop (18090) and the client MCP (18991) no longer depend on the old backend
+
+---
+
 ## [0.11.0] - 2026-10-24
 
 ### 中文
