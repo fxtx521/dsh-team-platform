@@ -5,6 +5,24 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ---
 
+## [0.15.0] - 2026-10-24
+
+### 中文
+
+- **修复：客户端对话无回复/报错**。根因是 Octop 的流式帧把正文放在 `token` 帧的 `content` 字段，客户端只认 `text` 字段 → 回调空。已按真实协议解析（`token.content` / `reasoning` / `done` / `error`）。
+- **修复：客户端没有自动选择助理** → 登录后自动读取 `/api/agents`，优先选已绑定 MCP 的助理并缓存。
+- 对话失败会写入本地日志，便于排查。
+- **Windows 构建上线**：GitHub Actions 工作流（`.github/workflows/build-desktop.yml`）在 `windows-latest` 上打出 NSIS 安装包，已成功产出。
+
+### English
+
+- **Fixed: empty replies / errors in client chat.** Octop streams text in `token` frames under `content` (not `text`), so the client accumulated nothing. Parsing now follows the real protocol (`token.content`, `reasoning`, `done`, `error`).
+- **Fixed: client never picked an agent** → on login it now reads `/api/agents`, prefers one with MCP bound, and caches it.
+- Chat failures are written to the local log for diagnosis.
+- **Windows builds enabled**: GitHub Actions workflow (`.github/workflows/build-desktop.yml`) produces an NSIS installer on `windows-latest`; first build succeeded.
+
+---
+
 ## [0.14.1] - 2026-10-24
 
 ### 中文

@@ -376,7 +376,11 @@ ipcMain.handle('octop:experts', async () => {
   }) };
 });
 
-ipcMain.handle('octop:chat', async (_e, payload) => await octopChat(payload));
+ipcMain.handle('octop:chat', async (_e, payload) => {
+  const r = await octopChat(payload);
+  if (!r.ok) log('对话失败: ' + (r.error || '未知'));
+  return r;
+});
 
 ipcMain.handle('auth:login', async (_e, { username, password }) => {
   const cfg = readCfg();
@@ -565,11 +569,22 @@ async function octopThread(agentId, sessionId) {
   return tid;
 }
 
+async function ensureOctopAgent() {
+  const cfg = readCfg();
+  if (cfg.octopAgent) return cfg.octopAgent;
+  const r = await octopFetch("GET", "/api/agents");
+  const list = (r.ok && Array.isArray(r.data)) ? r.data : [];
+  const withMcp = list.find((a) => Array.isArray(a.mcp_servers) && a.mcp_servers.length);
+  const aid = (withMcp && withMcp.agent_id) || (list[0] && list[0].agent_id) || "";
+  if (aid) { writeCfg({ ...readCfg(), octopAgent: aid }); log("已自动选择助理: " + aid); }
+  return aid;
+}
+
 async function octopChat({ text, sessionId, agentId }) {
   const cfg = readCfg();
   const tk = cfg.octopToken;
   if (!tk) return { ok: false, error: "未登录 Octop" };
-  const aid = agentId || cfg.octopAgent;
+  const aid = agentId || cfg.octopAgent || await ensureOctopAgent();
   if (!aid) return { ok: false, error: "没有可用助理" };
   const tid = await octopThread(aid, sessionId || "default");
   const base = octopBase();
@@ -589,6 +604,9 @@ async function octopChat({ text, sessionId, agentId }) {
       const t = m.type || (m.data && m.data.type);
       if (t === "error") { clearTimeout(timer); return finish({ ok: false, error: m.message || "对话出错" }); }
       if (t === "done") { clearTimeout(timer); return finish({ ok: true, reply: out, elapsed_ms: Date.now() - started }); }
+      // Octop 流式帧：token 帧的正文在 content 字段
+      if (t === "token" && typeof m.content === "string") { out += m.content; return; }
+      if (t === "reasoning") return;
       const chunk = (typeof m.text === "string" && m.text) ||
                     (m.data && (typeof m.data.text === "string" ? m.data.text : (typeof m.data.delta === "string" ? m.data.delta : ""))) ||
                     (typeof m.content === "string" ? m.content : "");
@@ -706,6 +724,7 @@ app.whenReady().then(() => {
   log('启动 · server=' + _c.serverUrl + ' octop=' + (_c.octopUrl || '-') + ' tok=' + (_c.octopToken ? 'yes' : 'no') + ' pid=' + process.pid);
   setTimeout(heartbeat, 1500);
   setInterval(heartbeat, 60 * 1000);
+  setTimeout(async () => { try { await ensureOctopAgent(); } catch {} }, 4000);
   setTimeout(startPoller, 2500);
   try { startMcpServer(); } catch (e) { log('MCP 启动异常: ' + e.message); }
   app.on('activate', () => { if (!win) createWindow(); else win.show(); });
