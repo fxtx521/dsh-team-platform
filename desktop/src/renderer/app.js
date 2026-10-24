@@ -303,8 +303,20 @@ async function loadExperiences() {
   }
 }
 async function loadSkills() {
-  const r = await api.skills(); curSkills = (r && r.data && r.data.items) || [];
-  $('#skillList').innerHTML = curSkills.map((s) => `<div class="item"><div class="t"><b>${esc(s.name)}</b><span>v${s.version || 1} · 云端下发</span></div><span class="badge ok">已同步</span></div><div class="sub" style="white-space:pre-wrap;padding:0 12px 10px">${esc((s.content || '').slice(0, 200))}</div>`).join('') || '<div class="sub">还没有技能，先去云端技能库添加</div>';
+  if (api.octopSkills) {
+    const r = await api.octopSkills();
+    const items = (r && r.items) || [];
+    curSkills = items;
+    $('#skillList').innerHTML = items.map(function (s) {
+      return '<div class="item"><div class="t"><b>' + esc(s.name) + '</b><span>' + esc(s.desc || '') + '</span></div><span class="badge ok">已同步</span></div>';
+    }).join('') || '<div class="sub">助理还没有技能</div>';
+    return;
+  }
+  const r = await api.skills();
+  curSkills = (r && r.data && r.data.items) || [];
+  $('#skillList').innerHTML = curSkills.map(function (s) {
+    return '<div class="item"><div class="t"><b>' + esc(s.name) + '</b><span>v' + (s.version || 1) + '</span></div><span class="badge ok">已同步</span></div>';
+  }).join('') || '<div class="sub">还没有技能</div>';
 }
 async function refresh() {
   SNAP = await api.snapshot();

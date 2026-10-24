@@ -376,6 +376,52 @@ ipcMain.handle('octop:experts', async () => {
   }) };
 });
 
+
+// ── Octop 经验（记忆候选）与技能 ──────────────────────────
+async function octopMemoryCandidates() {
+  const aid = await ensureOctopAgent();
+  if (!aid) return { ok: false, items: [] };
+  const r = await octopFetch("POST", "/api/agents/" + aid + "/memory/candidates/list", {});
+  const d = r.data || {};
+  const list = Array.isArray(d) ? d : (d.items || d.candidates || []);
+  return { ok: r.ok, items: list.slice(0, 50).map((c) => ({
+    id: c.id || c.candidate_id,
+    title: c.title || c.summary || String(c.assertion || "").slice(0, 80) || "(经验候选)",
+    kind: c.candidate_type || c.kind || "",
+    status: c.status || "pending",
+  })) };
+}
+
+async function octopSkills(expertId) {
+  let aid = readCfg().octopAgent;
+  if (expertId) {
+    const known = (readCfg().expertAgents || {})[expertId];
+    aid = known || (await resolveExpertAgent(expertId)) || aid;
+  }
+  if (!aid) aid = await ensureOctopAgent();
+  if (!aid) return { ok: false, items: [] };
+  const r = await octopFetch("GET", "/api/agents/" + aid + "/skills");
+  const d = r.data || [];
+  const list = Array.isArray(d) ? d : (d.items || d.skills || []);
+  return { ok: r.ok, agentId: aid, items: list.map((s) => ({
+    name: s.name || s.slug || s.id,
+    desc: s.description || "",
+    kind: s.kind || "",
+  })) };
+}
+
+async function octopCandidateAction(id, action) {
+  const aid = await ensureOctopAgent();
+  if (!aid) return { ok: false, error: "no agent" };
+  const verb = action === "promote" ? ":promote" : ":reject";
+  const r = await octopFetch("POST", "/api/agents/" + aid + "/memory/candidates/" + encodeURIComponent(id) + verb, {});
+  return { ok: r.ok, error: r.ok ? "" : ((r.data && (r.data.detail || r.data.error)) || "") };
+}
+
+ipcMain.handle('octop:memory', async () => await octopMemoryCandidates());
+ipcMain.handle('octop:skills', async (_e, p) => await octopSkills(p && p.expertId));
+ipcMain.handle('octop:candidateAction', async (_e, p) => await octopCandidateAction(p && p.id, p && p.action));
+
 ipcMain.handle('octop:chat', async (_e, payload) => {
   const r = await octopChat(payload);
   if (!r.ok) log('对话失败: ' + (r.error || '未知'));

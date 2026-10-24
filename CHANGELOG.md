@@ -5,6 +5,30 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ---
 
+## [0.16.1] - 2026-10-24
+
+### 中文
+
+**修复：技能库与经验页此前仍指向已停用的自研后台（显示为空）**
+- 技能库改为直接读 Octop 助理技能：`GET /api/agents/{id}/skills`（当前「助理一号」24 条），并跟随对话所选的专家助理切换。
+- 经验页改为读 Octop 记忆候选：`POST /api/agents/{id}/memory/candidates/list`（当前 9 条），主管可通过 / 驳回。
+- 补上此前缺失的 IPC：`octop:memory` / `octop:skills` / `octop:candidateAction`。
+
+**对齐核对**
+- 专家库 22 个（客户端下拉读同一接口 `/api/experts`）；已创建助理 6 个，全部有默认模型与身份提示词。
+
+### English
+
+**Fixed: the skills and experiences pages still pointed at the retired self-hosted backend (showed empty)**
+- Skills now read Octop agent skills directly (`GET /api/agents/{id}/skills`, 24 for the default agent) and follow the selected expert agent.
+- Experiences read Octop memory candidates (`POST /api/agents/{id}/memory/candidates/list`, currently 9); reviewers can promote/reject.
+- Added the missing IPC handlers: `octop:memory` / `octop:skills` / `octop:candidateAction`.
+
+**Alignment check**
+- 22 experts in the library (the client dropdown uses the same `/api/experts` endpoint); 6 agents exist, all with a default model and identity prompt.
+
+---
+
 ## [0.16.0] - 2026-10-24
 
 ### 中文
