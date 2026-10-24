@@ -863,8 +863,10 @@ async def my_summary(x_api_key: Optional[str] = Header(None)):
     skills_n = c.execute("SELECT count(*) n FROM skills").fetchone()["n"]
     exp_n = c.execute("SELECT count(*) n FROM experiences").fetchone()["n"]
     exp_pending = c.execute("SELECT count(*) n FROM experiences WHERE status='pending'").fetchone()["n"]
+    exps = c.execute("""SELECT id, title, status, created_at, substr(content,1,300) AS brief
+                          FROM experiences ORDER BY created_at DESC LIMIT 20""").fetchall()
     c.close()
-    return {"ok": True, "who": t["user_name"],
+    return {"ok": True, "who": t["user_name"], "experiences": [dict(r) for r in exps],
             "stats": {"total_tasks": total, "today_tasks": today_n, "skills": skills_n,
                       "experiences": exp_n, "pending_experience": exp_pending},
             "tasks": [dict(r) for r in tasks],

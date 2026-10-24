@@ -127,9 +127,10 @@ function go(view) {
   $$('.view').forEach((v) => v.classList.remove('active'));
   const el = $('#view-' + view); if (el) el.classList.add('active');
   $$('.nav-item').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
-  $('#crumb').textContent = { home: '概览', chat: '对话', projects: '我的项目', tasks: '任务', skills: '技能库', console: '终端', settings: '设置' }[view] || '';
+  $('#crumb').textContent = { home: '概览', chat: '对话', projects: '我的项目', tasks: '任务', experiences: '经验', skills: '技能库', console: '终端', settings: '设置' }[view] || '';
   if (view === 'chat') bindChat();
   if (view === 'tasks') loadTasks();
+  if (view === 'experiences') loadExperiences();
   if (view === 'skills') loadSkills();
   if (view === 'settings') fillSettings();
 }
@@ -221,6 +222,17 @@ function showTask(id) {
   $('#tdMeta').innerHTML = `<span class="badge ${t.status === 'done' ? 'ok' : 'run'}">${esc(t.status)}</span><span class="badge">${id.slice(0, 10)}</span><span class="badge">${fmtTime(t.created_at)}</span>`;
   $('#tdSteps').innerHTML = '<div class="tl"><b>任务创建</b><span>' + fmtTime(t.created_at) + '</span></div>' + (t.status === 'done' ? '<div class="tl"><b>执行完成</b><span>结果已回传云端</span></div>' : '<div class="tl"><b>执行中…</b></div>');
 }
+async function loadExperiences() {
+  const r = await api.mySummary ? await api.mySummary() : { ok: false };
+  const d = (r && r.data) || {};
+  const exps = d.experiences || [];
+  const st = d.stats || {};
+  $('#expStats').innerHTML = `<span>经验总数 <b>${st.experiences || 0}</b></span><span>待审 <b>${st.pending_experience || 0}</b></span><span>技能 <b>${st.skills || 0}</b></span>`;
+  const badge = (s) => s === 'approved' ? '<span class="badge ok">已入库</span>' : (s === 'rejected' ? '<span class="badge err">已驳回</span>' : '<span class="badge run">待审</span>');
+  $('#expList').innerHTML = exps.map((e) => `<div class="item" style="align-items:flex-start"><div class="t"><b>${esc(cleanTitle(e.title))}</b><span style="white-space:pre-wrap;display:block;margin-top:4px;color:#6b7280">${esc((e.brief || '').slice(0, 160))}</span></div>${badge(e.status)}</div>`).join('') || '<div class="sub">还没有经验，多在客户端干活会自动沉淀</div>';
+  const b = $('#btnRefreshExp'); if (b) b.onclick = loadExperiences;
+}
+
 async function loadSkills() {
   const r = await api.skills(); curSkills = (r && r.data && r.data.items) || [];
   $('#skillList').innerHTML = curSkills.map((s) => `<div class="item"><div class="t"><b>${esc(s.name)}</b><span>v${s.version || 1} · 云端下发</span></div><span class="badge ok">已同步</span></div><div class="sub" style="white-space:pre-wrap;padding:0 12px 10px">${esc((s.content || '').slice(0, 200))}</div>`).join('') || '<div class="sub">还没有技能，先去云端技能库添加</div>';
