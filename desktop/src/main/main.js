@@ -340,6 +340,10 @@ ipcMain.handle('cloud:mySummary', async () => {
   return await api('GET', '/v1/my/summary');
 });
 
+ipcMain.handle('cloud:experts', async () => {
+  return await api('GET', '/v1/experts');
+});
+
 ipcMain.handle('cloud:me', async () => {
   return await api('GET', '/v1/auth/me');
 });
@@ -376,7 +380,7 @@ ipcMain.handle('cloud:expAction', async (_e, { id, action }) => {
   return r;
 });
 
-ipcMain.handle('cloud:chat', async (_e, { message, sessionId, files, projectId }) => {
+ipcMain.handle('cloud:chat', async (_e, { message, sessionId, files, projectId, expertId }) => {
   const t = newTurn(message);
   for (const f of (files || [])) {
     try {
@@ -396,7 +400,7 @@ ipcMain.handle('cloud:chat', async (_e, { message, sessionId, files, projectId }
       }
     }
   } catch (e) { log('读取项目简报失败: ' + e.message); }
-  const r = await api('POST', '/v1/chat', { message, session_id: sessionId || '', files: t.attachments || [] });
+  const r = await api('POST', '/v1/chat', { message, session_id: sessionId || '', files: t.attachments || [], expert_id: expertId || '' });
   if (r.ok) log('对话完成 · ' + (r.data.elapsed_ms || 0) + 'ms');
   // 上报这一轮（任务 + 本地步骤 + 摘要），让云端能沉淀经验
   try {

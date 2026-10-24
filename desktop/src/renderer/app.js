@@ -37,6 +37,11 @@ const api = window.wb || {
   runCmd: async () => ({ ok: true, output: '（预览模式，未执行真实命令）' }),
   chat: async (m) => ({ ok: true, data: { reply: '（预览模式）收到：' + m, elapsed_ms: 3200 } }),
   login: async () => ({ ok: true, user: { display_name: '演示员工' } }),
+  experts: async () => ({ ok: true, data: { items: [
+    { id: 'general-assistant', name: '小通 · 通用助手' },
+    { id: 'business-operations', name: '业务流程专家' },
+    { id: 'ai-coding-coach', name: 'AI 编程实战导师' },
+  ] } }),
   logout: async () => ({ ok: true }),
   me: async () => ({ ok: true, data: { user: { username: 'u1', display_name: '演示员工', role: 'reviewer', dept: '' }, terminal: { id: 't1', hostname: 'demo-pc', employee_no: 'ZY-0001' }, permissions: ['experience.approve', 'task.run', 'skill.sync'] } }),
   expAction: async () => ({ ok: true }),
@@ -466,7 +471,8 @@ async function sendChat() {
   const tip = document.createElement('div');
   tip.className = 'typing'; tip.textContent = '助理思考中…'; box.appendChild(tip); box.scrollTop = box.scrollHeight;
   const proj = $('#chatProject') ? $('#chatProject').value : '';
-  const r = await api.chat(text, sid, attachments.slice(), proj);
+  const expert = $('#chatExpert') ? $('#chatExpert').value : '';
+  const r = await api.chat(text, sid, attachments.slice(), proj, expert);
   attachments = []; renderAttach();
   tip.remove();
   // 只写回发起这条消息的会话（即使中途切走了）
@@ -486,6 +492,17 @@ function bindChat() {
   if (nb && !nb._bound) {
     nb._bound = true;
     nb.onclick = () => { sessions.unshift(newSessionObj('新会话')); curSession = sessions[0].id; saveSessions(); renderSessions(); renderChat(); const i = $('#chatInput'); if (i) i.focus(); };
+  }
+  // 专家库
+  const exSel = $('#chatExpert');
+  if (exSel && !exSel._loaded) {
+    exSel._loaded = true;
+    (async () => {
+      const r = await api.experts ? await api.experts() : { ok: false };
+      const items = (r && r.data && r.data.items) || [];
+      exSel.innerHTML = '<option value="">默认助理</option>' +
+        items.map((e) => `<option value="${esc(e.id)}">${esc(e.name)}</option>`).join('');
+    })();
   }
   const sel = $('#chatProject');
   const cfg = SNAP?.cfg || {};

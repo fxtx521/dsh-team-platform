@@ -55,7 +55,10 @@
           <div class="chat-main">
         <div class="chat-head">
           <div><h3>和助理对话</h3><p class="sub">直接说要做的事，它会调用本地工具读写你的项目文件。</p></div>
-          <select id="chatProject" class="chat-proj"></select>
+          <div style="display:flex;gap:8px">
+            <select id="chatExpert" class="chat-proj" title="选择专家"></select>
+            <select id="chatProject" class="chat-proj"></select>
+          </div>
         </div>
         <div class="chat-body" id="chatBody"></div>
         <div class="chat-attach" id="chatAttach"></div>

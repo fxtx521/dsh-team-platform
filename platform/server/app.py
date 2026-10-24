@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS skills(
 CREATE TABLE IF NOT EXISTS experiences(
   id TEXT PRIMARY KEY, task_id TEXT, title TEXT, kind TEXT, content TEXT,
   status TEXT DEFAULT 'pending', skill_id TEXT, created_at TEXT);
+CREATE TABLE IF NOT EXISTS expert_agents(
+  id TEXT PRIMARY KEY, expert_id TEXT UNIQUE, agent_id TEXT, created_at TEXT);
 CREATE TABLE IF NOT EXISTS auth_sessions(
   id TEXT PRIMARY KEY, user_id TEXT, token TEXT UNIQUE, created_at TEXT);
 CREATE TABLE IF NOT EXISTS users(
@@ -803,10 +805,15 @@ def _distill_once(hours: int = 24) -> int:
             title = title.strip()[:60]
             if not title or title.startswith("命中"):
                 continue
-            # 质量过滤：测试类、过短、无实质结论的不要
-            if any(k in title for k in ("测试", "负载", "loadtest", "一句话")):
+            # 质量过滤：测试/噪音/无实质结论/没有真实执行步骤的都不要
+            noisy = ("测试", "负载", "loadtest", "一句话", "飞书消息", "记忆召回", "暗号", "命中")
+            if any(k in title for k in noisy):
                 continue
             if len(summary) < 40:
+                continue
+            real_steps = c.execute("""SELECT count(*) n FROM task_steps WHERE task_id=?
+                                      AND tool LIKE 'local_%'""", (t["id"],)).fetchone()["n"]
+            if real_steps < 1:
                 continue
             steps = c.execute("SELECT tool, duration_ms, ok FROM task_steps WHERE task_id=? ORDER BY seq", (t["id"],)).fetchall()
             step_txt = "、".join(f'{s["tool"]}({s["duration_ms"]}ms)' for s in steps)
@@ -937,6 +944,57 @@ def resolve_identity(request: Request, x_api_key: Optional[str]):
         return ({"username": u["username"], "display_name": u["display_name"], "role": u["role"], "dept": u["dept"]}, None)
     t = auth(x_api_key)
     return (user_of_terminal(t), t)
+
+
+# ── 专家库：把 Octop 的专家暴露给客户端，并支持按专家对话 ──
+@app.get("/v1/experts")
+async def list_experts(request: Request, x_api_key: Optional[str] = Header(None)):
+    resolve_identity(request, x_api_key)
+    import urllib.request as _u
+    try:
+        req = _u.Request(OCTOP_API + "/api/experts", headers={"Authorization": "Bearer " + octop_api_token()})
+        data = json.loads(_u.urlopen(req, timeout=20).read())
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:200], "items": []}
+    items = []
+    for e in (data if isinstance(data, list) else []):
+        label = e.get("label") or {}
+        items.append({"id": e.get("id"), "name": label.get("zh") or label.get("en") or e.get("id"),
+                      "desc": (e.get("description") or {}).get("zh") if isinstance(e.get("description"), dict) else (e.get("description") or "")})
+    return {"ok": True, "items": items}
+
+def agent_for_expert(expert_id: str) -> str:
+    """专家 -> 助理：没有就创建（缓存映射）。"""
+    if not expert_id or expert_id in ("default", "general-assistant"):
+        return OCTOP_AGENT
+    c = conn()
+    try:
+        row = c.execute("SELECT agent_id FROM expert_agents WHERE expert_id=?", (expert_id,)).fetchone()
+    except Exception:
+        row = None
+    c.close()
+    if row:
+        return row["agent_id"]
+    env = dict(os.environ); env["HOME"] = OCTOP_HOME
+    aid = ""
+    try:
+        p = subprocess.run([OCTOP_BIN, "--json", "agent", "from-expert", expert_id, "--user", "admin"],
+                           capture_output=True, text=True, timeout=120, env=env)
+        txt = (p.stdout or "").strip().splitlines()
+        aid = json.loads(txt[-1]).get("agent_id", "") if txt else ""
+    except Exception as e:
+        print("create agent from expert failed:", e)
+    if aid:
+        c = conn()
+        try:
+            c.execute("INSERT OR REPLACE INTO expert_agents(id,expert_id,agent_id,created_at) VALUES(?,?,?,?)",
+                      (uuid.uuid4().hex, expert_id, aid, now()))
+            c.commit()
+        except Exception:
+            pass
+        finally:
+            c.close()
+    return aid or OCTOP_AGENT
 
 @app.get("/v1/auth/me")
 async def auth_me(request: Request, x_api_key: Optional[str] = Header(None)):
@@ -1123,7 +1181,11 @@ async def chat_with_assistant(request: Request, x_api_key: Optional[str] = Heade
         parts.append("【本地文件内容（由客户端读取）】" + file_block)
     parts.append("【用户问题】\n" + msg)
     final_msg = "\n\n".join(parts)
-    res = await _asyncio.to_thread(octop_chat, final_msg, "", 240, "", tid)
+    # 专家（可选）：不同专家 = 不同助理实例
+    aid = OCTOP_AGENT
+    if b.get("expert_id"):
+        aid = await _asyncio.to_thread(agent_for_expert, str(b["expert_id"]))
+    res = await _asyncio.to_thread(octop_chat, final_msg, aid, 240, "", tid)
     return {"ok": res["ok"], "reply": res["reply"], "elapsed_ms": res["elapsed_ms"], "error": res.get("error", ""),
             "who": (terminal["user_name"] if terminal else "admin")}
 
