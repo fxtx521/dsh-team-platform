@@ -462,6 +462,7 @@ async function octopCapabilities(search) {
     const r = await octopFetch("GET", "/api/agents/" + aid + "/terminal/context");
     return { ok: r.ok, data: r.data };
   });
+  out.models = await safe(async () => await octopModels());
   out.pluginMarket = await safe(async () => {
     const r = await octopFetch("GET", "/api/plugins/market");
     const d = r.data || [];
@@ -546,6 +547,29 @@ ipcMain.handle('octop:capabilities', async (_e, p) => await octopCapabilities(p 
 
 
 // ── 渠道 / 用户 / 供应商 写操作 ─────────────────────────
+
+// ── 模型/供应商 ─────────────────────────────────────
+async function octopModels() {
+  const [act, res] = await Promise.all([
+    octopFetch("GET", "/api/providers/active-model"),
+    octopFetch("GET", "/api/providers/resolved"),
+  ]);
+  const list = Array.isArray(res.data) ? res.data : [];
+  return {
+    ok: act.ok && res.ok,
+    active: act.data || {},
+    items: list.map((m) => ({ provider: m.provider_name, model: m.model, name: m.name || m.model, ctx: m.context_window || 0 })),
+  };
+}
+
+ipcMain.handle("octop:models", async () => await octopModels());
+
+ipcMain.handle("octop:setActiveModel", async (_e, p) => {
+  const r = await octopFetch("PUT", "/api/providers/active-model", { provider_name: p.provider, model: p.model });
+  if (r.ok) log("已切换当前模型: " + p.provider + "/" + p.model);
+  return { ok: r.ok, data: r.data };
+});
+
 ipcMain.handle("octop:channelCreate", async (_e, p) => {
   const aid = await ensureOctopAgent();
   const body = { kind: p.kind, name: p.name || p.kind, enabled: true };

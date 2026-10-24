@@ -32,7 +32,7 @@
 | 技能市场 | `/api/skill-packages/hub/search` | ✅ |
 | 子代理目录 | `/api/subagent-catalog` | ✅ |
 | 当前助理子代理 | `/api/agents/{id}/subagents` | ✅ |
-| 模型供应商 | `/api/providers` | ✅ |
+| 模型供应商 | `/api/providers`、`PUT /api/providers/active-model` | ✅ 可切换当前模型 |
 | 渠道 | `/api/agents/{id}/channels` | ✅ 可建/测/删（需凭证）|
 | 浏览器 | `/api/browser/env-status`、`/api/browser/install` | ✅ Chromium 已安装，实测可抓网页 |
 | 终端 | `/api/agents/{id}/terminal/context` | ✅ |

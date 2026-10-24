@@ -5,6 +5,24 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ---
 
+## [0.25.0] - 2026-10-24
+
+### 中文
+
+**模型管理（写操作）**
+- 能力页显示当前模型（供应商 / 模型名）
+- 模型下拉可切换（小米MiMo: mimo-v2.6-pro / flash；本机Ollama: qwen3.5:9b）
+- 实测：`PUT /api/providers/active-model` 200，切回 flash 成功
+
+### English
+
+**Model management (write)**
+- Capabilities page shows the active model (provider / model).
+- Dropdown switches models (MiMo: pro/flash; local Ollama: qwen3.5:9b).
+- Verified: `PUT /api/providers/active-model` returned 200 and switching back to flash succeeded.
+
+---
+
 ## [0.24.0] - 2026-10-24
 
 ### 中文

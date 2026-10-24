@@ -343,6 +343,12 @@ function loadCapabilitiesWith(c) {
   const subs = c.subagents || {};
   html += sec('子代理（' + (subs.count || 0) + '）',
     (subs.sample || []).slice(0, 8).map((s) => '<div class="item"><div class="t"><b>' + esc(s.name || s.slug) + '</b><span>' + esc(s.div || '') + '</span></div></div>').join('') || '<div class="sub">无</div>');
+  const mo = c.models || {};
+  html += sec('当前模型',
+    '<div class="sub">' + esc(((mo.active || {}).provider_name || '-') + ' / ' + ((mo.active || {}).model || '-')) + '</div>' +
+    '<div style="display:flex;gap:8px;margin-top:8px"><select id="modelSel" style="border:1px solid #dfe3ea;border-radius:10px;padding:8px 10px;font-size:13px;min-width:260px">' +
+    ((mo.items || []).map((m) => '<option value="' + esc(m.provider + '|' + m.model) + '">' + esc(m.name) + '</option>').join('')) +
+    '</select><button class="btn ghost" id="btnSetModel">切换模型</button></div>');
   const prov = c.providers || {};
   html += sec('模型供应商', (prov.items || []).map((p) => '<div class="item"><div class="t"><b>' + esc(p.name || p.id) + '</b></div>' + (p.active ? '<span class="badge ok">使用中</span>' : '') + '</div>').join('') || '<div class="sub">无</div>');
   const ch = c.channels || {};
@@ -382,6 +388,14 @@ function loadCapabilitiesWith(c) {
     if (!un) { toast('请填用户名'); return; }
     const r = await api.octopUserCreate({ username: un, password: 'Init-' + Math.random().toString(36).slice(2, 10), role: 'user' });
     toast(r && r.ok ? ('已创建账号: ' + un) : ('创建失败: ' + ((r && r.error) || '')));
+    loadCapabilities();
+  };
+  const bsm = $('#btnSetModel');
+  if (bsm) bsm.onclick = async () => {
+    const v = ($('#modelSel') || {}).value || '';
+    const [provider, model] = v.split('|');
+    const r = await api.octopSetActiveModel({ provider, model });
+    toast(r && r.ok ? ('已切换模型: ' + model) : '切换失败');
     loadCapabilities();
   };
   const bi = $('#btnBrowserInstall');
