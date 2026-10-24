@@ -463,6 +463,11 @@ async function octopCapabilities(search) {
     return { ok: r.ok, data: r.data };
   });
   out.models = await safe(async () => await octopModels());
+  out.usage = await safe(async () => {
+    const r = await octopFetch("GET", "/api/usage/summary");
+    const d = r.data || {};
+    return { ok: r.ok, data: { window: d.window, total: d.total_tokens, input: d.input_tokens, output: d.output_tokens, calls: d.model_calls, turns: d.turns, cache_hit: d.cache_hit_percent } };
+  });
   out.pluginMarket = await safe(async () => {
     const r = await octopFetch("GET", "/api/plugins/market");
     const d = r.data || [];
@@ -561,6 +566,24 @@ async function octopModels() {
     items: list.map((m) => ({ provider: m.provider_name, model: m.model, name: m.name || m.model, ctx: m.context_window || 0 })),
   };
 }
+
+
+// ── 用量统计 / 上下文用量 / 语音 ───────────────────
+ipcMain.handle("octop:usage", async () => {
+  const r = await octopFetch("GET", "/api/usage/summary");
+  const d = r.data || {};
+  return { ok: r.ok, data: {
+    window: d.window, total: d.total_tokens, input: d.input_tokens, output: d.output_tokens,
+    calls: d.model_calls, turns: d.turns, cache_hit: d.cache_hit_percent,
+  } };
+});
+
+ipcMain.handle("octop:contextUsage", async (_e, p) => {
+  const aid = await ensureOctopAgent();
+  const tid = await octopThread(aid, p && p.sessionId ? p.sessionId : "usage");
+  const r = await octopFetch("GET", "/api/agents/" + aid + "/threads/" + tid + "/context-usage");
+  return { ok: r.ok, data: r.data };
+});
 
 ipcMain.handle("octop:models", async () => await octopModels());
 

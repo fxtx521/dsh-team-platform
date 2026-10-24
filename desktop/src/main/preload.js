@@ -39,6 +39,8 @@ contextBridge.exposeInMainWorld('wb', {
   octopKbUpload: (p) => ipcRenderer.invoke('octop:kbUpload', p),
   octopBrowserInstall: () => ipcRenderer.invoke('octop:browserInstall'),
   octopModels: () => ipcRenderer.invoke('octop:models'),
+  octopUsage: () => ipcRenderer.invoke('octop:usage'),
+  octopContextUsage: (p) => ipcRenderer.invoke('octop:contextUsage', p),
   octopSetActiveModel: (p) => ipcRenderer.invoke('octop:setActiveModel', p),
   octopChannelCreate: (p) => ipcRenderer.invoke('octop:channelCreate', p),
   octopChannelDelete: (p) => ipcRenderer.invoke('octop:channelDelete', p),

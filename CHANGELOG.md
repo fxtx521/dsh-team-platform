@@ -5,6 +5,24 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ---
 
+## [0.26.0] - 2026-10-24
+
+### 中文
+
+**用量统计与上下文用量**
+- 能力页显示近 30 天用量：总 tokens（实测 2,289,854）、输入/输出、模型调用 101 次、对话 63 轮、缓存命中 88%
+- 新增线程上下文用量接口接入（`/api/agents/{id}/threads/{tid}/context-usage`，max 128k）
+- **语音**：接口存在（`POST /api/voice/tts`、`/stt`、`WS /stt-stream`），但当前返回空音频 → 需在 Octop 配置语音模型
+
+### English
+
+**Usage statistics and context usage**
+- Capabilities page shows last-30-days usage: total tokens (2,289,854 measured), input/output, 101 model calls, 63 turns, 88% cache hit
+- Wired the per-thread context-usage endpoint (`/api/agents/{id}/threads/{tid}/context-usage`, max 128k)
+- **Voice**: APIs exist (`POST /api/voice/tts`, `/stt`, `WS /stt-stream`) but return empty audio → requires a voice model configured in Octop
+
+---
+
 ## [0.25.0] - 2026-10-24
 
 ### 中文

@@ -343,6 +343,12 @@ function loadCapabilitiesWith(c) {
   const subs = c.subagents || {};
   html += sec('子代理（' + (subs.count || 0) + '）',
     (subs.sample || []).slice(0, 8).map((s) => '<div class="item"><div class="t"><b>' + esc(s.name || s.slug) + '</b><span>' + esc(s.div || '') + '</span></div></div>').join('') || '<div class="sub">无</div>');
+  const ug = c.usage || {};
+  const ud = ug.data || {};
+  html += sec('用量统计（近 30 天）',
+    '<div class="sub">总 tokens ' + (ud.total || 0).toLocaleString() + ' · 输入 ' + (ud.input || 0).toLocaleString() +
+    ' · 输出 ' + (ud.output || 0).toLocaleString() + '</div>' +
+    '<div class="sub">模型调用 ' + (ud.calls || 0) + ' 次 · 对话轮次 ' + (ud.turns || 0) + ' · 缓存命中 ' + (ud.cache_hit || 0) + '%</div>');
   const mo = c.models || {};
   html += sec('当前模型',
     '<div class="sub">' + esc(((mo.active || {}).provider_name || '-') + ' / ' + ((mo.active || {}).model || '-')) + '</div>' +
