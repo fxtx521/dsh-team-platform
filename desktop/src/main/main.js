@@ -175,6 +175,10 @@ let tunnelChild = null;
 function startMcpTunnel() {
   const cfg = readCfg();
   if (cfg.mcpTunnel === false) return;
+  // 反向隧道只对「客户端在 Mac、云端 Octop 在另一台机器」这种部署有意义。
+  // Windows 上如果 Octop 就在本机（WSL/镜像网络），直接访问 127.0.0.1 即可，
+  // 再拉隧道反而会抢 18991 端口。2026-10-26 Windows 实机验证踩到。
+  if (process.platform !== "darwin" && !cfg.mcpTunnelForce) { log("非 macOS，跳过 MCP 反向隧道（本机直连）"); return; }
   const sshKey = process.env.DSH_SSH_KEY || path.join(app.getPath("home"), "Library/Application Support/lishi/ssh/id_ed25519");
   const kh = process.env.DSH_SSH_KNOWN || path.join(app.getPath("home"), "Library/Application Support/lishi/ssh/known_hosts");
   const host = cfg.tunnelHost || "Administrator@8.140.227.88";
@@ -405,6 +409,17 @@ handle("audit:days", async () => {
 
 
 // ── 用量与配额 ──────────────────────────────────────────
+handle("session:export", async (_e, { title, content }) => {
+  try {
+    const dir = app.getPath("downloads");
+    const safe = String(title || "会话").replace(/[\\/:*?"<>|]/g, "_").slice(0, 40);
+    const file = path.join(dir, safe + ".md");
+    fs.writeFileSync(file, String(content || ""), "utf8");
+    audit("export", "导出会话", path.basename(file), true, 0);
+    return { ok: true, file };
+  } catch (e) { return { ok: false, error: e.message }; }
+});
+
 handle("dialog:pickFiles", async () => {
   const r = await dialog.showOpenDialog(win, {
     title: "选择要入库的文档",
@@ -1218,7 +1233,8 @@ async function octopFetch(method, p, body, token) {
   const base = octopBase();
   const headers = { "Content-Type": "application/json" };
   const tk = token || readCfg().octopToken;
-  if (tk) headers["Authorization"] = "Bearer " + tk;
+  if (!tk) { state.needLogin = true; return { ok: false, status: 401, data: { error: "未登录" } }; }
+  headers["Authorization"] = "Bearer " + tk;
   const r = await httpReq(method, base + p, body, headers, 25000);
   // 滑动续期：Octop 会在响应头里给新 token
   try {
@@ -1227,7 +1243,8 @@ async function octopFetch(method, p, body, token) {
   } catch {}
   if (r && (r.status === 401 || r.status === 403) && !token) {
     state.needLogin = true;
-    log("登录状态已失效（" + r.status + "），需要重新登录");
+    if (!state.loggedAuthFail) log("登录状态已失效（" + r.status + "），需要重新登录");
+    state.loggedAuthFail = true;
     if (win && !win.isDestroyed()) win.webContents.send("app:needLogin", {});
   }
   return r;
@@ -1294,6 +1311,7 @@ async function octopLogin(username, password) {
   agentId = (withMcp && withMcp.agent_id) || (list[0] && list[0].agent_id) || "";
   writeCfg({ ...readCfg(), octopToken: token, octopAgent: agentId, employeeName: me.display_name || me.username || username });
   state.needLogin = false;
+  state.loggedAuthFail = false;
   log("Octop 登录成功: " + (me.username || username) + " · 助理 " + agentId);
   broadcast();
   return { ok: true, token, user: me, agentId, agents: list.map((a) => ({ id: a.agent_id, name: a.name })) };

@@ -71,6 +71,7 @@ contextBridge.exposeInMainWorld('wb', {
   guardSave: (g) => ipcRenderer.invoke("guard:save", g),
   guardCheck: (t) => ipcRenderer.invoke("guard:check", t),
   pickFiles: () => ipcRenderer.invoke("dialog:pickFiles"),
+  exportSession: (payload) => ipcRenderer.invoke("session:export", payload),
   filePathOf: (f) => {
     try {
       const { webUtils } = require('electron');

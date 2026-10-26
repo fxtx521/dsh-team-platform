@@ -1148,12 +1148,18 @@ async function sendChat() {
   box.appendChild(tip); box.scrollTop = box.scrollHeight;
   const proj = $('#chatProject') ? $('#chatProject').value : '';
   const expert = $('#chatExpert') ? $('#chatExpert').value : '';
-  let r;
-  if (api.octopChat) {
-    const res = await api.octopChat({ text, sessionId: sid, agentId: expert || undefined, skills: pickedSkills.slice(), kbIds: pickedKbs.slice() });
-    r = res && res.ok ? { ok: true, data: { reply: res.reply, elapsed_ms: res.elapsed_ms } } : { ok: false, data: { error: (res && res.error) || '对话失败' } };
-  } else {
-    r = await api.chat(text, sid, attachments.slice(), proj, expert);
+  const callOnce = async () => {
+    if (api.octopChat) {
+      const res = await api.octopChat({ text, sessionId: sid, agentId: expert || undefined, skills: pickedSkills.slice(), kbIds: pickedKbs.slice() });
+      return res && res.ok ? { ok: true, data: { reply: res.reply, elapsed_ms: res.elapsed_ms } } : { ok: false, data: { error: (res && res.error) || "对话失败" } };
+    }
+    return await api.chat(text, sid, attachments.slice(), proj, expert);
+  };
+  let r = await callOnce();
+  if (!r || !r.ok) {
+    toast("第一次没成功，正在自动重试…");
+    await new Promise((done) => setTimeout(done, 900));
+    r = await callOnce();
   }
   attachments = []; renderAttach();
   if (tip._timer) clearInterval(tip._timer);
@@ -1317,6 +1323,21 @@ function bind() {
       ps.onchange = async () => { const out = await api.applyPreset(ps.value); toast(out && out.ok ? ("已切到" + (((r.presets || []).find((x) => x.id === ps.value) || {}).name || "")) : "切换失败"); };
     }).catch(() => {});
   }
+  const exBtn = $("#btnExportSession");
+  if (exBtn) exBtn.onclick = async () => {
+    const s = getSession();
+    const lines = [];
+    lines.push("# " + (s.title || "会话"));
+    lines.push("");
+    (s.msgs || []).forEach((m) => {
+      if (m.role === "user") lines.push("**我**：" + (m.text || ""));
+      else if (m.role === "ai") lines.push("**助理**：" + (m.text || ""));
+      else if (m.role === "sys") lines.push("- " + (m.text || ""));
+      lines.push("");
+    });
+    const r = await api.exportSession({ title: s.title || "会话", content: lines.join("\n") });
+    toast(r && r.ok ? ("已导出到下载目录：" + r.file.split("/").pop()) : "导出失败");
+  };
   const kbUp = $("#btnKbUpload");
   if (kbUp) kbUp.onclick = async () => {
     if (!curKbId) { toast("先选一个知识库"); return; }
@@ -1404,3 +1425,26 @@ async function loadMe() {
   if (location.search.includes('modal=1')) openTaskModal(location.search.includes('tpl=ledger') ? 'ledger' : (location.search.includes('tpl=bid') ? 'bid' : 'verify'));
   window.addEventListener('hashchange', () => go((location.hash || '').replace('#', '') || 'home'));
 })();
+
+
+document.addEventListener("keydown", (e) => {
+  const meta = e.metaKey || e.ctrlKey;
+  if (meta && e.key.toLowerCase() === "k") {
+    e.preventDefault();
+    go("chat");
+    const box = $("#chatSearch"); if (box) { box.focus(); box.select(); }
+    return;
+  }
+  if (meta && e.shiftKey && e.key.toLowerCase() === "n") {
+    e.preventDefault();
+    go("chat");
+    const nb = $("#btnNewSession"); if (nb) nb.click();
+    return;
+  }
+  if (meta && e.key === "Enter") {
+    if (document.activeElement && document.activeElement.id === "chatInput") {
+      e.preventDefault();
+      const sb = $("#chatSend"); if (sb) sb.click();
+    }
+  }
+});
