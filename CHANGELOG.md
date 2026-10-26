@@ -5,6 +5,30 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ---
 
+## [0.41.0] - 2026-10-26
+
+### 中文
+
+**稳定性修复（这次踩的坑一并堵上）**
+- **登录过期自动续登**：登录凭据用系统 safeStorage 加密存本机；token 过期时自动用凭据续登，续不上会弹登录框并提示，不再出现「专家列表空了、发消息不回」
+- **401/403 明确提示**：接口鉴权失败会写日志并通知界面，不再静默失败
+- **本地 MCP 隧道改由客户端托管**：客户端启动后自己拉起反向隧道，断开每 8 秒重连，不依赖外部脚本；这是之前「mcp load failed」的根因
+- **MCP 会话协议补齐**：initialize 返回 `Mcp-Session-Id`，支持 GET 的 SSE 推送通道与 DELETE 关闭会话
+- **IPC 注册幂等化**：同一通道重复注册先注销旧的，避免 Electron 抛异常导致 App 起不来
+- 实测：连接器探测 ok=true、工具 9 个；让助理读本地 说明.txt，4.7 秒返回内容；直接对话 6 秒回复
+
+### English
+
+**Reliability fixes (the pitfalls from this round)**
+- **Silent re-login**: credentials are encrypted with the OS safeStorage; when the token expires the client logs in again automatically and falls back to a login prompt instead of showing empty expert lists
+- **Explicit 401/403 handling**: auth failures are logged and surfaced to the UI
+- **The local MCP tunnel is now owned by the client**: it spawns the reverse tunnel on startup and reconnects every 8 seconds; its absence was the root cause of `mcp load failed`
+- **MCP session protocol**: initialize returns `Mcp-Session-Id`; GET SSE stream and DELETE session are supported
+- **Idempotent IPC registration**: re-registering a channel unregisters the old handler instead of crashing Electron at startup
+- Verified: connector probe ok with 9 tools; the agent read a local file in 4.7s; plain chat replied in 6s
+
+---
+
 ## [0.40.0] - 2026-10-26
 
 ### 中文

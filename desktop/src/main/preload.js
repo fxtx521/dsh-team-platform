@@ -68,5 +68,6 @@ contextBridge.exposeInMainWorld('wb', {
   close: () => ipcRenderer.invoke('window:close'),
   onState: (cb) => ipcRenderer.on('app:state', (_e, d) => cb(d)),
   onLog: (cb) => ipcRenderer.on('app:log', (_e, d) => cb(d)),
+  onNeedLogin: (cb) => ipcRenderer.on('app:needLogin', () => cb()),
   onGoto: (cb) => ipcRenderer.on('app:goto', (_e, d) => cb(d)),
 });

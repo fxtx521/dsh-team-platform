@@ -191,7 +191,8 @@ function bindLogin() {
     $('#lgErr').textContent = '';
     if (!u || !p) { $('#lgErr').textContent = '请输入账号和密码'; return; }
     $('#lgOk').textContent = '登录中…';
-    const r = (api.octopLogin ? await api.octopLogin(u, p) : await api.login(u, p));
+    const remember = !!($('#lgRemember') || {}).checked;
+    const r = (api.octopLogin ? await api.octopLogin(u, p, remember) : await api.login(u, p));
     $('#lgOk').textContent = '登录';
     if (r && r.ok) {
       $('#loginModal').classList.remove('show');
@@ -1280,6 +1281,11 @@ function bind() {
                   file: (d.tool === 'local_read_file' || d.tool === 'local_write_file') ? d.path : '',
                   out: d.outputPreview || '' });
     saveSessions(); renderChat();
+  });
+  api.onNeedLogin && api.onNeedLogin(() => {
+    const m = $('#loginModal');
+    if (m) m.classList.add('show');
+    toast('登录已过期，请重新登录');
   });
   api.onState && api.onState((d) => { SNAP = d; renderConn(); renderHome(); renderProjects(); });
   api.onLog && api.onLog((rec) => { if (SNAP?.state) { SNAP.state.log.unshift(rec); renderHome(); } });

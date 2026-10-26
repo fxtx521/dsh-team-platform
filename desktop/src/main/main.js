@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, ipcMain, dialog, Tray, Menu, shell, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Tray, Menu, shell, nativeImage, safeStorage } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -26,7 +26,7 @@ function httpReq(method, urlStr, body, headers = {}, timeoutMs = 15000) {
         const text = Buffer.concat(chunks).toString('utf8');
         let data = null;
         try { data = JSON.parse(text); } catch { data = { raw: text }; }
-        resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, data });
+        resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, data, headers: res.headers });
       });
     });
     req.on('timeout', () => { req.destroy(new Error('timeout')); });
@@ -164,15 +164,42 @@ function snapshot() {
 }
 
 // ── IPC ───────────────────────────────────────────────────
-ipcMain.handle('app:snapshot', () => snapshot());
-ipcMain.handle('app:saveConfig', (_e, patch) => { const c = writeCfg({ ...readCfg(), ...patch }); broadcast(); return c; });
+// 幂等注册：重复注册同一通道时先注销旧的，避免 Electron 抛异常导致整个 App 起不来
+function handle(channel, fn) {
+  try { ipcMain.removeHandler(channel); } catch {}
+  ipcMain.handle(channel, fn);
+}
 
-ipcMain.handle('project:pickFolder', async () => {
+// 本地 MCP 反向隧道：客户端自己维护，断了自动重连
+let tunnelChild = null;
+function startMcpTunnel() {
+  const cfg = readCfg();
+  if (cfg.mcpTunnel === false) return;
+  const sshKey = process.env.DSH_SSH_KEY || path.join(app.getPath("home"), "Library/Application Support/lishi/ssh/id_ed25519");
+  const kh = process.env.DSH_SSH_KNOWN || path.join(app.getPath("home"), "Library/Application Support/lishi/ssh/known_hosts");
+  const host = cfg.tunnelHost || "Administrator@8.140.227.88";
+  const port = String(cfg.tunnelPort || 60022);
+  const spawnTunnel = () => {
+    const { spawn } = require("child_process");
+    const args = ["-N", "-R", "18991:127.0.0.1:18991", "-p", port, "-i", sshKey,
+      "-o", "BatchMode=yes", "-o", "UserKnownHostsFile=" + kh, "-o", "StrictHostKeyChecking=accept-new",
+      "-o", "ExitOnForwardFailure=yes", "-o", "ServerAliveInterval=30", host];
+    tunnelChild = spawn("ssh", args, { stdio: "ignore" });
+    tunnelChild.on("exit", () => { tunnelChild = null; setTimeout(spawnTunnel, 8000); });
+    log("MCP 隧道已启动（自动重连）");
+  };
+  try { spawnTunnel(); } catch (e) { log("MCP 隧道启动失败: " + e.message); }
+}
+
+handle('app:snapshot', () => snapshot());
+handle('app:saveConfig', (_e, patch) => { const c = writeCfg({ ...readCfg(), ...patch }); broadcast(); return c; });
+
+handle('project:pickFolder', async () => {
   const res = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'] });
   if (res.canceled || !res.filePaths.length) return null;
   return res.filePaths[0];
 });
-ipcMain.handle('project:add', (_e, { name, dir }) => {
+handle('project:add', (_e, { name, dir }) => {
   const cfg = readCfg();
   if (!cfg.projects.find((p) => p.dir === dir)) {
     cfg.projects.push({ id: 'p' + Date.now(), name: name || path.basename(dir), dir, createdAt: new Date().toISOString() });
@@ -182,12 +209,12 @@ ipcMain.handle('project:add', (_e, { name, dir }) => {
   broadcast();
   return cfg.projects;
 });
-ipcMain.handle('project:remove', (_e, id) => {
+handle('project:remove', (_e, id) => {
   const cfg = readCfg();
   cfg.projects = cfg.projects.filter((p) => p.id !== id);
   writeCfg(cfg); broadcast(); return cfg.projects;
 });
-ipcMain.handle('project:listFiles', (_e, { dir, rel }) => {
+handle('project:listFiles', (_e, { dir, rel }) => {
   const base = path.resolve(dir);
   const target = path.resolve(base, rel || '.');
   if (!isInside(cfgRoots(), target)) return { ok: false, error: '目录不在允许范围' };
@@ -200,23 +227,23 @@ ipcMain.handle('project:listFiles', (_e, { dir, rel }) => {
     return { ok: true, items, path: target };
   } catch (e) { return { ok: false, error: e.message }; }
 });
-ipcMain.handle('project:readFile', (_e, { file, max = 200000 }) => {
+handle('project:readFile', (_e, { file, max = 200000 }) => {
   const f = path.resolve(file);
   if (!isInside(cfgRoots(), f)) return { ok: false, error: '文件不在允许范围' };
   try { return { ok: true, content: fs.readFileSync(f, 'utf8').slice(0, max) }; } catch (e) { return { ok: false, error: e.message }; }
 });
-ipcMain.handle('project:writeFile', (_e, { file, content }) => {
+handle('project:writeFile', (_e, { file, content }) => {
   const f = path.resolve(file);
   if (!isInside(cfgRoots(), f)) return { ok: false, error: '文件不在允许范围' };
   try { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, content, 'utf8'); log('已写文件: ' + f); return { ok: true }; } catch (e) { return { ok: false, error: e.message }; }
 });
-ipcMain.handle('project:readBrief', (_e, { dir }) => {
+handle('project:readBrief', (_e, { dir }) => {
   try {
     const f = path.join(path.resolve(dir), 'PROJECT.md');
     return { ok: true, content: fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : '' };
   } catch (e) { return { ok: false, content: '', error: e.message }; }
 });
-ipcMain.handle('project:saveBrief', (_e, { dir, content }) => {
+handle('project:saveBrief', (_e, { dir, content }) => {
   const base = path.resolve(dir);
   if (!isInside(cfgRoots(), base)) return { ok: false, error: '目录不在允许范围' };
   try {
@@ -225,20 +252,20 @@ ipcMain.handle('project:saveBrief', (_e, { dir, content }) => {
     return { ok: true };
   } catch (e) { return { ok: false, error: e.message }; }
 });
-ipcMain.handle('project:openInFinder', (_e, dir) => { shell.openPath(dir); return true; });
-ipcMain.handle('project:reveal', (_e, file) => { shell.showItemInFolder(file); return true; });
+handle('project:openInFinder', (_e, dir) => { shell.openPath(dir); return true; });
+handle('project:reveal', (_e, file) => { shell.showItemInFolder(file); return true; });
 
 
-ipcMain.handle('cloud:heartbeat', async () => { await heartbeat(); return snapshot(); });
-ipcMain.handle('cloud:tasks', async () => {
+handle('cloud:heartbeat', async () => { await heartbeat(); return snapshot(); });
+handle('cloud:tasks', async () => {
   const r = await api('GET', '/v1/tasks?limit=20');
   return r;
 });
-ipcMain.handle('cloud:skills', async () => {
+handle('cloud:skills', async () => {
   const r = await api('GET', '/v1/skills?since=0');
   return r;
 });
-ipcMain.handle('cloud:skillStats', async () => {
+handle('cloud:skillStats', async () => {
   const r = await api('GET', '/v1/skills/stats');
   return r;
 });
@@ -330,11 +357,11 @@ function startPoller() {
   loop();
 }
 
-ipcMain.handle('cloud:mySummary', async () => {
+handle('cloud:mySummary', async () => {
   return await api('GET', '/v1/my/summary');
 });
 
-ipcMain.handle('cmd:run', async (_e, { cmd, cwd }) => {
+handle('cmd:run', async (_e, { cmd, cwd }) => {
   const cfg = readCfg();
   if (cfg.allowCommand === false) return { ok: false, error: '命令执行已在设置里关闭' };
   const line = String(cmd || '').trim();
@@ -354,7 +381,7 @@ ipcMain.handle('cmd:run', async (_e, { cmd, cwd }) => {
   }
 });
 
-ipcMain.handle('mcp:toggle', async (_e, on) => {
+handle('mcp:toggle', async (_e, on) => {
   const cfg = readCfg();
   writeCfg({ ...cfg, mcpEnabled: !!on });
   if (on && !mcpServer) startMcpServer();
@@ -363,17 +390,24 @@ ipcMain.handle('mcp:toggle', async (_e, on) => {
   return { ok: true, enabled: !!on };
 });
 
-ipcMain.handle('cloud:experts', async () => {
+handle('cloud:experts', async () => {
   return await api('GET', '/v1/experts');
 });
 
-ipcMain.handle('cloud:me', async () => {
+handle('cloud:me', async () => {
   return await api('GET', '/v1/auth/me');
 });
 
-ipcMain.handle('octop:login', async (_e, { username, password }) => await octopLogin(username, password));
+handle('octop:login', async (_e, { username, password, remember }) => {
+  const r = await octopLogin(username, password);
+  if (r && r.ok) {
+    if (remember) saveCreds(username, password);
+    else writeCfg({ ...readCfg(), octopCred: "" });
+  }
+  return r;
+});
 
-ipcMain.handle('octop:experts', async () => {
+handle('octop:experts', async () => {
   const r = await octopFetch('GET', '/api/experts');
   const list = (r.ok && Array.isArray(r.data)) ? r.data : [];
   return { ok: r.ok, items: list.map((e) => {
@@ -548,7 +582,7 @@ async function octopCapabilities(search) {
   return out;
 }
 
-ipcMain.handle('octop:capabilities', async (_e, p) => await octopCapabilities(p && p.search));
+handle('octop:capabilities', async (_e, p) => await octopCapabilities(p && p.search));
 
 
 // ── 渠道 / 用户 / 供应商 写操作 ─────────────────────────
@@ -573,7 +607,7 @@ async function octopModels() {
 // ── 语音朗读（TTS + 本地播放）────────────────────
 
 // ── 语音输入（录音 + STT）──────────────────────────
-ipcMain.handle("local:record", async (_e, p) => {
+handle("local:record", async (_e, p) => {
   const secs = Math.min(Math.max(Number((p && p.seconds) || 5), 1), 60);
   const dir = path.join(app.getPath("userData"), "voice");
   try { fs.mkdirSync(dir, { recursive: true }); } catch {}
@@ -594,7 +628,7 @@ ipcMain.handle("local:record", async (_e, p) => {
   return { ok: true, file };
 });
 
-ipcMain.handle("octop:stt", async (_e, p) => {
+handle("octop:stt", async (_e, p) => {
   const f = String((p && p.file) || "");
   if (!f || !fs.existsSync(f)) return { ok: false, error: "音频文件不存在" };
   const data = fs.readFileSync(f);
@@ -621,7 +655,7 @@ ipcMain.handle("octop:stt", async (_e, p) => {
   return { ok: false, error: (parsed.error && (parsed.error.message || parsed.error.code)) || ("STT 失败 " + resp.status) };
 });
 
-ipcMain.handle("octop:tts", async (_e, p) => {
+handle("octop:tts", async (_e, p) => {
   const text = String((p && p.text) || "").slice(0, 2000);
   if (!text) return { ok: false, error: "文本为空" };
   const provider = (p && p.provider) || "edge";
@@ -649,7 +683,7 @@ ipcMain.handle("octop:tts", async (_e, p) => {
   return { ok: true, file, bytes: resp.buf.length };
 });
 
-ipcMain.handle("local:playAudio", async (_e, p) => {
+handle("local:playAudio", async (_e, p) => {
   const f = String((p && p.file) || "");
   if (!f || !fs.existsSync(f)) return { ok: false, error: "文件不存在" };
   const { spawn } = require("child_process");
@@ -659,7 +693,7 @@ ipcMain.handle("local:playAudio", async (_e, p) => {
   catch (e) { return { ok: false, error: e.message }; }
 });
 
-ipcMain.handle("octop:usage", async () => {
+handle("octop:usage", async () => {
   const r = await octopFetch("GET", "/api/usage/summary");
   const d = r.data || {};
   return { ok: r.ok, data: {
@@ -668,22 +702,22 @@ ipcMain.handle("octop:usage", async () => {
   } };
 });
 
-ipcMain.handle("octop:contextUsage", async (_e, p) => {
+handle("octop:contextUsage", async (_e, p) => {
   const aid = await ensureOctopAgent();
   const tid = await octopThread(aid, p && p.sessionId ? p.sessionId : "usage");
   const r = await octopFetch("GET", "/api/agents/" + aid + "/threads/" + tid + "/context-usage");
   return { ok: r.ok, data: r.data };
 });
 
-ipcMain.handle("octop:models", async () => await octopModels());
+handle("octop:models", async () => await octopModels());
 
-ipcMain.handle("octop:setActiveModel", async (_e, p) => {
+handle("octop:setActiveModel", async (_e, p) => {
   const r = await octopFetch("PUT", "/api/providers/active-model", { provider_name: p.provider, model: p.model });
   if (r.ok) log("已切换当前模型: " + p.provider + "/" + p.model);
   return { ok: r.ok, data: r.data };
 });
 
-ipcMain.handle("octop:channelCreate", async (_e, p) => {
+handle("octop:channelCreate", async (_e, p) => {
   const aid = await ensureOctopAgent();
   const body = { kind: p.kind, name: p.name || p.kind, enabled: true };
   if (p.credentials && typeof p.credentials === "object") body.credentials = p.credentials;
@@ -692,31 +726,31 @@ ipcMain.handle("octop:channelCreate", async (_e, p) => {
   return { ok: r.ok, data: r.data, error: r.ok ? "" : JSON.stringify(r.data).slice(0, 200) };
 });
 
-ipcMain.handle("octop:channelDelete", async (_e, p) => {
+handle("octop:channelDelete", async (_e, p) => {
   const aid = await ensureOctopAgent();
   const r = await octopFetch("DELETE", "/api/agents/" + aid + "/channels/" + encodeURIComponent(p.id), null);
   return { ok: r.ok, data: r.data };
 });
 
-ipcMain.handle("octop:channelTest", async (_e, p) => {
+handle("octop:channelTest", async (_e, p) => {
   const aid = await ensureOctopAgent();
   const r = await octopFetch("POST", "/api/agents/" + aid + "/channels/" + encodeURIComponent(p.id) + "/test", {});
   return { ok: r.ok, data: r.data, error: r.ok ? "" : JSON.stringify(r.data).slice(0, 200) };
 });
 
-ipcMain.handle("octop:userCreate", async (_e, p) => {
+handle("octop:userCreate", async (_e, p) => {
   const r = await octopFetch("POST", "/api/users", {
     username: p.username, password: p.password, role: p.role || "user", display_name: p.display_name || p.username,
   });
   return { ok: r.ok, data: r.data, error: r.ok ? "" : JSON.stringify(r.data).slice(0, 200) };
 });
 
-ipcMain.handle("octop:userToggle", async (_e, p) => {
+handle("octop:userToggle", async (_e, p) => {
   const r = await octopFetch("PATCH", "/api/users/" + encodeURIComponent(p.id), { disabled: !p.enabled });
   return { ok: r.ok, data: r.data };
 });
 
-ipcMain.handle('octop:browserInstall', async () => {
+handle('octop:browserInstall', async () => {
   log('开始安装浏览器运行时…');
   const r = await octopFetch("POST", "/api/browser/install", {});
   return { ok: r.ok, data: r.data };
@@ -724,42 +758,42 @@ ipcMain.handle('octop:browserInstall', async () => {
 
 
 // ── 知识库（产品化页面）──────────────────────────
-ipcMain.handle("octop:kbList", async () => {
+handle("octop:kbList", async () => {
   const r = await octopFetch("GET", "/api/knowledge-bases");
   const d = r.data || [];
   const list = Array.isArray(d) ? d : (d.items || []);
   return { ok: r.ok, items: list.map((k) => ({ id: k.id, name: k.name || k.title, docs: k.doc_count || 0 })) };
 });
 
-ipcMain.handle("octop:kbDocs", async (_e, p) => {
+handle("octop:kbDocs", async (_e, p) => {
   const r = await octopFetch("GET", "/api/knowledge-bases/" + encodeURIComponent(p.kbId) + "/documents");
   const d = r.data || [];
   const list = Array.isArray(d) ? d : (d.items || []);
   return { ok: r.ok, items: list.map((x) => ({ id: x.id, name: x.filename || x.path, status: x.status || "", size: x.byte_size || 0, chunks: x.chunk_count || 0 })) };
 });
 
-ipcMain.handle('octop:kbUpload', async (_e, { kbId, name, content, format }) => {
+handle('octop:kbUpload', async (_e, { kbId, name, content, format }) => {
   const r = await octopFetch("POST", "/api/knowledge-bases/" + encodeURIComponent(kbId) + "/documents/text",
     { name: name || "未命名.txt", content: String(content || ""), format: format || "txt" });
   return { ok: r.ok, data: r.data };
 });
 
-ipcMain.handle('octop:kbCreate', async (_e, { name, description }) => {
+handle('octop:kbCreate', async (_e, { name, description }) => {
   const r = await octopFetch("POST", "/api/knowledge-bases", { name, description: description || "" });
   return { ok: r.ok, data: r.data, error: r.ok ? "" : ((r.data && (r.data.error || r.data.detail)) || "") };
 });
 
-ipcMain.handle('octop:memory', async () => await octopMemoryCandidates());
-ipcMain.handle('octop:skills', async (_e, p) => await octopSkills(p && p.expertId));
-ipcMain.handle('octop:candidateAction', async (_e, p) => await octopCandidateAction(p && p.id, p && p.action));
+handle('octop:memory', async () => await octopMemoryCandidates());
+handle('octop:skills', async (_e, p) => await octopSkills(p && p.expertId));
+handle('octop:candidateAction', async (_e, p) => await octopCandidateAction(p && p.id, p && p.action));
 
-ipcMain.handle('octop:chat', async (_e, payload) => {
+handle('octop:chat', async (_e, payload) => {
   const r = await octopChat(payload);
   if (!r.ok) log('对话失败: ' + (r.error || '未知'));
   return r;
 });
 
-ipcMain.handle('auth:login', async (_e, { username, password }) => {
+handle('auth:login', async (_e, { username, password }) => {
   const cfg = readCfg();
   const base = cfg.serverUrl.replace(/\/$/, '');
   const r = await httpReq('POST', base + '/v1/auth/login', { username, password }, { 'Content-Type': 'application/json' }, 20000);
@@ -778,7 +812,7 @@ ipcMain.handle('auth:login', async (_e, { username, password }) => {
   return { ok: true, user: r.data.user, permissions: r.data.permissions };
 });
 
-ipcMain.handle('octop:logout', async () => {
+handle('octop:logout', async () => {
   const cfg = readCfg();
   writeCfg({ ...cfg, octopToken: '', octopAgent: '', devAutoLogin: false });
   log('已退出 Octop 登录');
@@ -786,14 +820,14 @@ ipcMain.handle('octop:logout', async () => {
   return { ok: true };
 });
 
-ipcMain.handle('auth:logout', async () => {
+handle('auth:logout', async () => {
   const cfg = readCfg();
   writeCfg({ ...cfg, token: '' });
   broadcast();
   return { ok: true };
 });
 
-ipcMain.handle('cloud:expAction', async (_e, { id, action }) => {
+handle('cloud:expAction', async (_e, { id, action }) => {
   const r = await api('POST', '/v1/experience/' + encodeURIComponent(id) + '/' + (action === 'approve' ? 'approve' : 'reject'), {});
   if (r.ok) log('经验' + (action === 'approve' ? '通过' : '驳回') + ': ' + id.slice(0, 8));
   return r;
@@ -947,7 +981,23 @@ function startMcpServer() {
   const cfg = readCfg();
   if (cfg.mcpEnabled === false) return;
   const host = cfg.mcpBind || "127.0.0.1";
+  const mcpSessions = new Set();
   mcpServer = http.createServer((req, res) => {
+    // MCP streamable-HTTP：GET 用于服务端推送通道，DELETE 关闭会话
+    if (req.method === "GET") {
+      const sid = req.headers["mcp-session-id"] || "";
+      res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive",
+        ...(sid ? { "Mcp-Session-Id": sid } : {}) });
+      res.write(": connected\n\n");
+      const hb = setInterval(() => { try { res.write(": ping\n\n"); } catch {} }, 25000);
+      req.on("close", () => clearInterval(hb));
+      return;
+    }
+    if (req.method === "DELETE") {
+      const sid = req.headers["mcp-session-id"];
+      if (sid) mcpSessions.delete(sid);
+      res.writeHead(200); return res.end();
+    }
     if (req.method !== "POST") { res.writeHead(405); return res.end(); }
     let body = "";
     req.on("data", (c) => { body += c; });
@@ -962,7 +1012,12 @@ function startMcpServer() {
         res.end(payload);
       };
       const ok = (result) => send({ jsonrpc: "2.0", id, result });
-      if (method === "initialize") return ok({ protocolVersion: "2024-11-05", capabilities: { tools: {} }, serverInfo: { name: "lishi-workbench-local", version: app.getVersion() } });
+      if (method === "initialize") {
+        const sid = require("crypto").randomBytes(16).toString("hex");
+        mcpSessions.add(sid);
+        res.setHeader("Mcp-Session-Id", sid);
+        return ok({ protocolVersion: "2024-11-05", capabilities: { tools: {} }, serverInfo: { name: "lishi-workbench-local", version: app.getVersion() } });
+      }
       if (method === "notifications/initialized") { res.writeHead(202); return res.end(); }
       if (method === "ping") return ok({});
       if (method === "tools/list") return ok({ tools: mcpTools() });
@@ -1003,12 +1058,68 @@ function octopBase() {
   return String(c.octopUrl || "http://127.0.0.1:18090").replace(/\/$/, "");
 }
 
-function octopFetch(method, p, body, token) {
+async function octopFetch(method, p, body, token) {
   const base = octopBase();
   const headers = { "Content-Type": "application/json" };
   const tk = token || readCfg().octopToken;
   if (tk) headers["Authorization"] = "Bearer " + tk;
-  return httpReq(method, base + p, body, headers, 25000);
+  const r = await httpReq(method, base + p, body, headers, 25000);
+  // 滑动续期：Octop 会在响应头里给新 token
+  try {
+    const fresh = r && r.headers && (r.headers["x-octop-access-token"] || r.headers["X-Octop-Access-Token"]);
+    if (fresh) writeCfg({ ...readCfg(), octopToken: fresh });
+  } catch {}
+  if (r && (r.status === 401 || r.status === 403) && !token) {
+    state.needLogin = true;
+    log("登录状态已失效（" + r.status + "），需要重新登录");
+    if (win && !win.isDestroyed()) win.webContents.send("app:needLogin", {});
+  }
+  return r;
+}
+
+
+// ── 凭据记忆（safeStorage 加密，仅本机）──────────────
+function saveCreds(username, password) {
+  try {
+    const raw = JSON.stringify({ username, password });
+    const enc = safeStorage.isEncryptionAvailable()
+      ? safeStorage.encryptString(raw).toString("base64")
+      : Buffer.from(raw, "utf8").toString("base64");
+    writeCfg({ ...readCfg(), octopCred: enc });
+    log("已记住登录凭据（本机加密）");
+  } catch (e) { log("保存凭据失败: " + e.message); }
+}
+
+function loadCreds() {
+  try {
+    const enc = readCfg().octopCred;
+    if (!enc) return null;
+    const raw = safeStorage.isEncryptionAvailable()
+      ? safeStorage.decryptString(Buffer.from(enc, "base64"))
+      : Buffer.from(enc, "base64").toString("utf8");
+    const o = JSON.parse(raw);
+    return o && o.username && o.password ? o : null;
+  } catch (e) { return null; }
+}
+
+async function ensureSession() {
+  const cfg = readCfg();
+  if (!cfg.octopToken) { state.needLogin = true; return false; }
+  const r = await octopFetch("GET", "/api/agents");
+  if (r.ok) { state.needLogin = false; return true; }
+  if (r.status === 401 || r.status === 403) {
+    const cred = loadCreds();
+    if (cred) {
+      log("登录已过期，用记住的凭据自动续登…");
+      const res = await octopLogin(cred.username, cred.password);
+      if (res && res.ok) { log("自动续登成功"); state.needLogin = false; return true; }
+    }
+    state.needLogin = true;
+    log("登录状态失效，需要重新登录");
+    if (win && !win.isDestroyed()) win.webContents.send("app:needLogin", {});
+    return false;
+  }
+  return false;
 }
 
 async function octopLogin(username, password) {
@@ -1026,6 +1137,7 @@ async function octopLogin(username, password) {
   const withMcp = list.find((a) => Array.isArray(a.mcp_servers) && a.mcp_servers.length);
   agentId = (withMcp && withMcp.agent_id) || (list[0] && list[0].agent_id) || "";
   writeCfg({ ...readCfg(), octopToken: token, octopAgent: agentId, employeeName: me.display_name || me.username || username });
+  state.needLogin = false;
   log("Octop 登录成功: " + (me.username || username) + " · 助理 " + agentId);
   broadcast();
   return { ok: true, token, user: me, agentId, agents: list.map((a) => ({ id: a.agent_id, name: a.name })) };
@@ -1195,7 +1307,7 @@ async function octopChat({ text, sessionId, agentId, skills, kbIds }) {
   });
 }
 
-ipcMain.handle('cloud:chat', async (_e, { message, sessionId, files, projectId, expertId }) => {
+handle('cloud:chat', async (_e, { message, sessionId, files, projectId, expertId }) => {
   const t = newTurn(message);
   for (const f of (files || [])) {
     try {
@@ -1232,19 +1344,19 @@ ipcMain.handle('cloud:chat', async (_e, { message, sessionId, files, projectId, 
   return r;
 });
 
-ipcMain.handle('cloud:runTask', async (_e, payload) => {
+handle('cloud:runTask', async (_e, payload) => {
   const r = await api('POST', '/v1/octop/run', payload);
   if (r.ok) log('任务已提交 → ' + (r.data.task_id || '') + ' · ' + (r.data.elapsed_ms || 0) + 'ms');
   else log('任务提交失败: ' + JSON.stringify(r.data).slice(0, 200));
   return r;
 });
-ipcMain.handle('cloud:uploadArtifact', async (_e, { taskId, name, content }) => {
+handle('cloud:uploadArtifact', async (_e, { taskId, name, content }) => {
   const r = await api('POST', '/v1/tasks/' + encodeURIComponent(taskId) + '/artifacts/upload-b64',
     { name, visibility: 'team', content_b64: Buffer.from(String(content || ''), 'utf8').toString('base64') });
   if (r.ok) log('产物已上传: ' + name);
   return r;
 });
-ipcMain.handle('project:saveOutput', (_e, { dir, name, content }) => {
+handle('project:saveOutput', (_e, { dir, name, content }) => {
   const base = path.resolve(dir);
   if (!isInside(cfgRoots(), base)) return { ok: false, error: '目录不在允许范围' };
   try {
@@ -1257,7 +1369,7 @@ ipcMain.handle('project:saveOutput', (_e, { dir, name, content }) => {
     return { ok: true, path: f };
   } catch (e) { return { ok: false, error: e.message }; }
 });
-ipcMain.handle('project:listTextFiles', (_e, { dir, rel }) => {
+handle('project:listTextFiles', (_e, { dir, rel }) => {
   const base = path.resolve(dir);
   const target = path.resolve(base, rel || '.');
   if (!isInside(cfgRoots(), target)) return { ok: false, items: [] };
@@ -1270,8 +1382,8 @@ ipcMain.handle('project:listTextFiles', (_e, { dir, rel }) => {
     return { ok: true, items };
   } catch (e) { return { ok: false, items: [], error: e.message }; }
 });
-ipcMain.handle('window:minimize', () => win && win.minimize());
-ipcMain.handle('window:close', () => win && win.hide());
+handle('window:minimize', () => win && win.minimize());
+handle('window:close', () => win && win.hide());
 
 function cfgRoots() {
   const cfg = readCfg();
@@ -1301,10 +1413,33 @@ app.whenReady().then(() => {
   log('启动 · server=' + _c.serverUrl + ' octop=' + (_c.octopUrl || '-') + ' tok=' + (_c.octopToken ? 'yes' : 'no') + ' pid=' + process.pid);
   setTimeout(heartbeat, 1500);
   setInterval(heartbeat, 60 * 1000);
+  setTimeout(async () => {
+    try {
+      const credFile = path.join('/Users/liubang/Documents/deepseek-harness/default-workspace', '.octop-creds');
+      if (fs.existsSync(credFile)) {
+        const lines = fs.readFileSync(credFile, 'utf8').trim().split(/\r?\n/);
+        const username = (lines[0] || '').trim();
+        const password = (lines[1] || '').trim();
+        if (username && password) {
+          log('发现本机引导凭据，尝试登录…');
+          const res = await octopLogin(username, password);
+          if (res && res.ok) {
+            saveCreds(username, password);
+            try { fs.unlinkSync(credFile); } catch {}
+            log('引导登录成功，凭据已加密保存');
+          } else {
+            log('引导登录失败: ' + ((res && res.error) || ''));
+          }
+        }
+      }
+    } catch (e) { log('引导登录异常: ' + e.message); }
+    try { await ensureSession(); } catch (e) { log('会话校验失败: ' + e.message); }
+  }, 3000);
   setTimeout(async () => { try { await ensureOctopAgent(); } catch {} }, 4000);
   setTimeout(async () => { try { await repairAllAgentModels(); } catch (e) { log('修复模型失败: ' + e.message); } }, 6000);
   setTimeout(async () => { try { await repairExpertAgents(); } catch (e) { log('修复专家身份失败: ' + e.message); } }, 8000);
   setTimeout(startPoller, 2500);
+  setTimeout(() => { try { startMcpTunnel(); } catch (e) { log('隧道启动异常: ' + e.message); } }, 6000);
   try { startMcpServer(); } catch (e) { log('MCP 启动异常: ' + e.message); }
   app.on('activate', () => { if (!win) createWindow(); else win.show(); });
 });
