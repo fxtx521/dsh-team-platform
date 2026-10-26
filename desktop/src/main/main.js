@@ -361,6 +361,157 @@ handle('cloud:mySummary', async () => {
   return await api('GET', '/v1/my/summary');
 });
 
+
+// ── 本地审计：工具调用、命令执行、文件操作都留痕（只记摘要，不记正文）──────
+function auditDir() {
+  const d = path.join(app.getPath("userData"), "audit");
+  try { fs.mkdirSync(d, { recursive: true }); } catch {}
+  return d;
+}
+
+function auditFile(day) {
+  const d = day || new Date().toISOString().slice(0, 10);
+  return path.join(auditDir(), d + ".jsonl");
+}
+
+function audit(kind, action, detail, ok, ms) {
+  try {
+    const row = { ts: new Date().toISOString(), kind, action, detail: String(detail || "").slice(0, 300), ok: ok !== false, ms: Math.max(0, Number(ms) || 0) };
+    fs.appendFileSync(auditFile(), JSON.stringify(row) + "\n");
+  } catch (e) { log("审计写入失败: " + e.message); }
+}
+
+function auditList(day) {
+  try {
+    const f = auditFile(day);
+    if (!fs.existsSync(f)) return [];
+    return fs.readFileSync(f, "utf8").split("\n").filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean).slice(-500);
+  } catch (e) { return []; }
+}
+
+function auditExport(day) {
+  const rows = auditList(day);
+  const head = "时间,类型,动作,对象,结果,耗时毫秒";
+  const body = rows.map((r) => [r.ts, r.kind, r.action, String(r.detail || "").replace(/[",\n]/g, " "), r.ok ? "成功" : "失败", r.ms].join(","));
+  const target = path.join(app.getPath("userData"), "audit", "audit-" + (day || new Date().toISOString().slice(0, 10)) + ".csv");
+  try { fs.writeFileSync(target, "\ufeff" + [head].concat(body).join("\n"), "utf8"); return { ok: true, file: target, count: rows.length }; } catch (e) { return { ok: false, error: e.message }; }
+}
+
+handle("audit:list", async (_e, day) => auditList(day));
+handle("audit:export", async (_e, day) => auditExport(day));
+handle("audit:days", async () => {
+  try { return fs.readdirSync(auditDir()).filter((f) => f.endsWith(".jsonl")).map((f) => f.replace(/\.jsonl$/, "")).sort().reverse().slice(0, 60); } catch { return []; }
+});
+
+
+// ── 用量与配额 ──────────────────────────────────────────
+handle("dialog:pickFiles", async () => {
+  const r = await dialog.showOpenDialog(win, {
+    title: "选择要入库的文档",
+    properties: ["openFile", "multiSelections"],
+    filters: [{ name: "文档", extensions: ["docx", "pdf", "xlsx", "xls", "txt", "md", "csv"] }],
+  });
+  return r.canceled ? [] : r.filePaths;
+});
+
+handle("usage:summary", async () => {
+  const r = await octopFetch("GET", "/api/usage/summary");
+  return { ok: r.ok, data: r.data, quota: readCfg().quota || null };
+});
+
+handle("usage:quota", async (_e, q) => {
+  writeCfg({ ...readCfg(), quota: q || null });
+  return { ok: true };
+});
+
+// ── 文档解析（docx/pdf/xlsx/txt/md → 纯文本）────────────
+async function parseDoc(file) {
+  const ext = path.extname(file).toLowerCase();
+  if (ext === ".txt" || ext === ".md" || ext === ".csv") return fs.readFileSync(file, "utf8");
+  if (ext === ".docx") {
+    const mammoth = require("mammoth");
+    const r = await mammoth.extractRawText({ path: file });
+    return String(r.value || "");
+  }
+  if (ext === ".pdf") {
+    const { PDFParse } = require("pdf-parse");
+    const buf = fs.readFileSync(file);
+    const parser = new PDFParse({ data: buf });
+    try {
+      const r = await parser.getText();
+      return String((r && r.text) || "");
+    } finally {
+      try { await parser.destroy(); } catch {}
+    }
+  }
+  if (ext === ".xlsx" || ext === ".xls") {
+    const XLSX = require("xlsx");
+    const wb = XLSX.readFile(file);
+    const parts = [];
+    for (const name of wb.SheetNames) {
+      parts.push("【工作表 " + name + "】");
+      parts.push(XLSX.utils.sheet_to_csv(wb.Sheets[name]));
+    }
+    return parts.join("\n");
+  }
+  if (ext === ".doc") throw new Error("老版 .doc 不支持，请另存为 .docx");
+  throw new Error("不支持的文件类型: " + ext);
+}
+
+handle("kb:uploadDoc", async (_e, { kbId, files }) => {
+  if (!kbId) return { ok: false, error: "没选知识库" };
+  const list = Array.isArray(files) ? files : [];
+  const done = [];
+  for (const f of list) {
+    const t0 = Date.now();
+    try {
+      const text = await parseDoc(f);
+      const clean = String(text || "").replace(/\u0000/g, "").trim();
+      if (clean.length < 10) throw new Error("解析结果为空或过短");
+      const title = path.basename(f);
+      const r = await octopFetch("POST", "/api/knowledge-bases/" + encodeURIComponent(kbId) + "/documents/text", { name: title, content: clean.slice(0, 400000), format: "md" });
+      audit("kb", "文档入库", title + " → " + kbId, r.ok, Date.now() - t0);
+      done.push({ file: title, ok: r.ok, chars: clean.length, error: r.ok ? "" : JSON.stringify(r.data).slice(0, 200) });
+    } catch (e) {
+      audit("kb", "文档入库失败", path.basename(f), false, Date.now() - t0);
+      done.push({ file: path.basename(f), ok: false, chars: 0, error: String(e.message || e).slice(0, 200) });
+    }
+  }
+  return { ok: done.every((d) => d.ok), results: done };
+});
+
+// ── 模型预设 ────────────────────────────────────────────
+const DEFAULT_PRESETS = [
+  { id: "fast", name: "省钱", model: "", reasoning: "low" },
+  { id: "write", name: "写作", model: "", reasoning: "medium" },
+  { id: "deep", name: "深度分析", model: "", reasoning: "high" },
+];
+handle("models:presets", async () => ({ presets: readCfg().presets || DEFAULT_PRESETS, active: readCfg().presetId || "write" }));
+handle("models:savePresets", async (_e, { presets, presetId }) => { writeCfg({ ...readCfg(), presets, presetId }); return { ok: true }; });
+handle("models:applyPreset", async (_e, presetId) => {
+  const cfg = readCfg();
+  const p = (cfg.presets || DEFAULT_PRESETS).find((x) => x.id === presetId);
+  if (!p) return { ok: false, error: "没有这个预设" };
+  let r = { ok: true };
+  if (p.model) r = await octopFetch("PUT", "/api/providers/active-model", { model: p.model });
+  if (r.ok) writeCfg({ ...readCfg(), presetId });
+  audit("model", "切换预设", p.name + (p.model ? " → " + p.model : ""), r.ok, 0);
+  return { ok: r.ok, preset: p, error: r.ok ? "" : JSON.stringify(r.data).slice(0, 200) };
+});
+
+// ── 敏感拦截 ────────────────────────────────────────────
+const DEFAULT_GUARD = { enabled: true, block: ["身份证", "银行卡号", "密码"], warn: ["绝密", "内部资料"] };
+handle("guard:config", async () => readCfg().guard || DEFAULT_GUARD);
+handle("guard:save", async (_e, g) => { writeCfg({ ...readCfg(), guard: g }); return { ok: true }; });
+handle("guard:check", async (_e, text) => {
+  const g = readCfg().guard || DEFAULT_GUARD;
+  const s = String(text || "");
+  const hitB = (g.block || []).filter((k) => k && s.includes(k));
+  const hitW = (g.warn || []).filter((k) => k && s.includes(k));
+  if (hitB.length) audit("guard", "拦截发送", hitB.join("/"), false, 0);
+  return { blocked: g.enabled !== false && hitB.length > 0, block: hitB, warn: hitW };
+});
+
 handle('cmd:run', async (_e, { cmd, cwd }) => {
   const cfg = readCfg();
   if (cfg.allowCommand === false) return { ok: false, error: '命令执行已在设置里关闭' };
@@ -373,10 +524,13 @@ handle('cmd:run', async (_e, { cmd, cwd }) => {
   try {
     const shell = process.platform === 'win32' ? 'cmd.exe' : '/bin/sh';
     const args = process.platform === 'win32' ? ['/c', line] : ['-c', line];
+    const t0 = Date.now();
     const out = requireChild(shell, args, wd);
     log('本地执行: ' + line);
+    audit('command', '执行命令', line + ' @ ' + wd, true, Date.now() - t0);
     return { ok: true, output: out };
   } catch (e) {
+    audit('command', '执行命令', line + '（失败）', false, 0);
     return { ok: false, error: String(e.message || e).slice(0, 800) };
   }
 });
@@ -1026,6 +1180,7 @@ function startMcpServer() {
         try {
           const t0 = Date.now();
           const out = mcpExec(p.name, p.arguments || {});
+          audit("tool", p.name, String((p.arguments && (p.arguments.dir || p.arguments.file || p.arguments.cmd)) || ""), true, Date.now() - t0);
           if (win && !win.isDestroyed()) {
             win.webContents.send("app:tool", {
               tool: p.name, ok: true, ms: Date.now() - t0,
@@ -1036,6 +1191,7 @@ function startMcpServer() {
           }
           return ok({ content: [{ type: "text", text: String(out).slice(0, 20000) }], isError: false });
         } catch (e) {
+          audit("tool", p.name, "失败: " + String(e.message || "").slice(0, 120), false, 0);
           if (win && !win.isDestroyed()) {
             win.webContents.send("app:tool", { tool: p.name, ok: false, ms: 0, argsText: "", path: "", outputPreview: String(e.message || "") });
           }

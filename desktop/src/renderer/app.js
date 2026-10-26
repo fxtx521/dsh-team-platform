@@ -228,7 +228,9 @@ function go(view) {
   $$('.view').forEach((v) => v.classList.remove('active'));
   const el = $('#view-' + view); if (el) el.classList.add('active');
   $$('.nav-item').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
-  $('#crumb').textContent = { home: '概览', chat: '对话', projects: '我的项目', tasks: '任务', experiences: '经验', capabilities: '诊断', knowledge: '知识库', expertspage: '专家广场', skills: '技能库', console: '终端', settings: '设置' }[view] || '';
+  $('#crumb').textContent = { home: '概览', chat: '对话', projects: '我的项目', tasks: '任务', experiences: '经验', capabilities: '诊断', knowledge: '知识库', expertspage: '专家广场', skills: '技能库', console: '终端', settings: '设置', usage: '用量', audit: '审计' }[view] || '';
+  if (view === 'usage') loadUsage();
+  if (view === 'audit') loadAudit();
   if (view === 'chat') bindChat();
   if (view === 'tasks') loadTasks();
   if (view === 'experiences') loadExperiences();
@@ -634,6 +636,66 @@ function bindConfirmModal() {
   const ok = $("#cfOk"), cancel = $("#cfCancel");
   if (cancel) cancel.onclick = close;
   if (ok) ok.onclick = () => { const cb = confirmCb; close(); if (cb) cb(); };
+}
+
+
+// ── 用量与配额 ──────────────────────────────────────────
+async function loadUsage() {
+  const box = $("#usageStat"); if (!box) return;
+  box.innerHTML = '<div class="sub">加载中…</div>';
+  const r = await api.usageSummary();
+  const d = (r && r.data) || {};
+  const q = (r && r.quota) || {};
+  const total = Number(d.total_tokens || 0);
+  const today = Array.isArray(d.buckets) && d.buckets.length ? Number((d.buckets[d.buckets.length - 1] || {}).total_tokens || 0) : 0;
+  const rows = [];
+  const row = (k, v) => rows.push("<div class=\"row\"><b>" + k + "</b><span>" + v + "</span></div>");
+  row("统计窗口", esc(String(d.window || "last_30d")));
+  row("累计 token", total ? fmtNum(total) : "—");
+  row("输入 / 输出", fmtNum(Number(d.input_tokens || 0)) + " / " + fmtNum(Number(d.output_tokens || 0)));
+  row("缓存命中率", d.cache_hit_percent != null ? (Number(d.cache_hit_percent).toFixed(2) + "%") : "—");
+  row("模型调用 / 轮次", fmtNum(Number(d.model_calls || 0)) + " / " + fmtNum(Number(d.turns || 0)));
+  if (today) row("最近一天 token", fmtNum(today));
+  const daily = Number(q.dailyTokens || 0);
+  const monthly = Number(q.monthlyTokens || 0);
+  if (daily > 0 && today > 0) {
+    const pct = Math.min(100, Math.round((today / daily) * 100));
+    row("对比每日额度", pct + "%" + (pct >= 80 ? "（已超八成）" : ""));
+  }
+  if (monthly > 0 && total > 0) {
+    const pct = Math.min(100, Math.round((total / monthly) * 100));
+    row("对比每月额度", pct + "%" + (pct >= 80 ? "（已超八成）" : ""));
+  }
+  box.innerHTML = rows.join("");
+  if ($("#quotaDaily")) $("#quotaDaily").value = daily || "";
+  if ($("#quotaMonthly")) $("#quotaMonthly").value = monthly || "";
+}
+
+function fmtNum(n) {
+  const v = Number(n) || 0;
+  if (v >= 1e9) return (v / 1e9).toFixed(2) + "B";
+  if (v >= 1e6) return (v / 1e6).toFixed(1) + "M";
+  if (v >= 1e3) return (v / 1e3).toFixed(1) + "K";
+  return String(v);
+}
+
+// ── 审计 ────────────────────────────────────────────────
+async function loadAudit(day) {
+  const box = $("#auditList"); if (!box) return;
+  const days = await api.auditDays();
+  const sel = $("#auditDay");
+  if (sel && days.length) {
+    const cur = day || sel.value || days[0];
+    sel.innerHTML = days.map((d) => "<option value=\"" + d + "\"" + (d === cur ? " selected" : "") + ">" + d + "</option>").join("");
+  }
+  const target = day || (sel && sel.value) || "";
+  const rows = await api.auditList(target);
+  if (!rows.length) { box.innerHTML = '<div class="sub">这一天还没有记录</div>'; return; }
+  box.innerHTML = rows.slice().reverse().map((r) => {
+    const t = String(r.ts || "").slice(11, 19);
+    const icon = r.ok ? "✅" : "❌";
+    return "<div class=\"row\"><b>" + esc(t) + " " + esc(r.kind || "") + "</b><span>" + icon + " " + esc(r.action || "") + (r.detail ? " · " + esc(String(r.detail).slice(0, 80)) : "") + (r.ms ? " · " + r.ms + "ms" : "") + "</span></div>";
+  }).join("");
 }
 
 function friendlyError(raw) {
@@ -1051,6 +1113,14 @@ async function sendChat() {
   const inp = $('#chatInput');
   const text = (inp.value || '').trim();
   if (!text) return;
+  try {
+    const g = await api.guardCheck(text);
+    if (g && g.blocked) {
+      toast('含敏感词：' + (g.block || []).join('、') + '，已拦下不发送');
+      return;
+    }
+    if (g && g.warn && g.warn.length) toast('提醒：内容含 ' + g.warn.join('、') + '，已照常发送');
+  } catch {}
   const s = getSession();          // 锁定本次发送所属会话
   const sid = s.id;
   inp.value = '';
@@ -1179,6 +1249,8 @@ function bind() {
   bindLogin();
   bindChat();
   $$('.nav-item').forEach((b) => b.onclick = () => go(b.dataset.view));
+  const hashView = (location.hash || '').replace('#', '');
+  if (hashView && $('#view-' + hashView)) go(hashView);
   $$('[data-view]').forEach((b) => { if (b.classList.contains('link') || b.tagName === 'BUTTON' && !b.classList.contains('nav-item')) b.onclick = () => go(b.dataset.view); });
   $('#btnRefresh').onclick = async () => { await api.heartbeat(); await refresh(); toast('已刷新'); };
   $('#btnQuick').onclick = () => openTaskModal('verify');
@@ -1225,23 +1297,37 @@ function bind() {
     toast(r && r.ok ? "已创建知识库" : ("创建失败: " + ((r && r.error) || "")));
     loadKnowledge();
   });
+  const uR = $("#btnUsageRefresh"); if (uR) uR.onclick = loadUsage;
+  const qS = $("#btnQuotaSave"); if (qS) qS.onclick = async () => {
+    await api.saveQuota({ dailyTokens: Number(($("#quotaDaily") || {}).value) || 0, monthlyTokens: Number(($("#quotaMonthly") || {}).value) || 0 });
+    toast("额度已保存"); loadUsage();
+  };
+  const aR = $("#btnAuditReload"); if (aR) aR.onclick = () => loadAudit();
+  const aD = $("#auditDay"); if (aD) aD.onchange = () => loadAudit(aD.value);
+  const aE = $("#btnAuditExport"); if (aE) aE.onclick = async () => {
+    const d = ($("#auditDay") || {}).value || "";
+    const r = await api.auditExport(d);
+    toast(r && r.ok ? ("已导出 " + r.count + " 条") : "导出失败");
+  };
+  const ps = $("#presetSel");
+  if (ps) {
+    api.getPresets().then((r) => {
+      const list = (r && r.presets) || [];
+      ps.innerHTML = list.map((p) => "<option value=\"" + p.id + "\"" + (p.id === (r && r.active) ? " selected" : "") + ">" + p.name + "</option>").join("");
+      ps.onchange = async () => { const out = await api.applyPreset(ps.value); toast(out && out.ok ? ("已切到" + (((r.presets || []).find((x) => x.id === ps.value) || {}).name || "")) : "切换失败"); };
+    }).catch(() => {});
+  }
   const kbUp = $("#btnKbUpload");
   if (kbUp) kbUp.onclick = async () => {
     if (!curKbId) { toast("先选一个知识库"); return; }
-    const p = (SNAP?.cfg?.projects || [])[0];
-    if (!p) { toast("先添加一个项目"); return; }
-    const rf = await api.listTextFiles({ dir: p.dir });
-    const items = (rf && rf.items) || [];
-    if (!items.length) { toast("项目里没有文本文件"); return; }
-    askName("上传哪个文件？（序号 1-" + items.length + "）", "1", async (v) => {
-      const f = items[parseInt(v, 10) - 1];
-      if (!f) { toast("序号不对"); return; }
-      const rd = await api.readFile({ file: f.path, max: 200000 });
-      if (!rd || !rd.ok) { toast("读取失败"); return; }
-      const up = await api.octopKbUpload({ kbId: curKbId, name: f.name, content: rd.content, format: "md" });
-      toast(up && up.ok ? "已上传" : "上传失败");
-      loadKbDocs(); loadKnowledge();
-    });
+    const files = await api.pickFiles();
+    if (!files || !files.length) return;
+    toast("正在解析 " + files.length + " 个文件…");
+    const r = await api.uploadDocs({ kbId: curKbId, files });
+    const okN = ((r && r.results) || []).filter((x) => x.ok).length;
+    const bad = ((r && r.results) || []).filter((x) => !x.ok);
+    toast("入库成功 " + okN + " 个" + (bad.length ? ("，失败 " + bad.length + "：" + bad[0].error) : ""));
+    loadKbDocs(); loadKnowledge();
   };
   const er = $("#btnExpertRefresh");
   if (er) er.onclick = loadExpertsPage;

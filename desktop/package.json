@@ -1,7 +1,7 @@
 {
   "name": "lishi-workbench",
   "productName": "砺 · 工作台",
-  "version": "0.1.0",
+  "version": "0.5.0",
   "description": "砺 · 本地工作台客户端（连接云端团队 AI 平台）",
   "main": "src/main/main.js",
   "author": "liubang",
@@ -47,6 +47,9 @@
     }
   },
   "dependencies": {
-    "ws": "^8.22.0"
+    "mammoth": "^1.13.0",
+    "pdf-parse": "^2.4.5",
+    "ws": "^8.22.0",
+    "xlsx": "^0.18.5"
   }
 }

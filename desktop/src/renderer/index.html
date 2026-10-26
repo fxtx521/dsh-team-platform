@@ -23,6 +23,8 @@
       <button class="nav-item" data-view="experiences"><span class="ico"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/><circle cx="12" cy="12" r="4.2"/></svg></span>经验</button>
       <button class="nav-item" data-view="skills"><span class="ico"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/><circle cx="12" cy="12" r="4.2"/></svg></span>技能库</button>
       <button class="nav-item" data-view="console"><span class="ico"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="m7 10 3 2-3 2M13 14h4"/></svg></span>终端</button>
+      <button class="nav-item" data-view="usage"><span class="ico"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></svg></span>用量</button>
+      <button class="nav-item" data-view="audit"><span class="ico"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h9l4 4v14H6z"/><path d="M9 12h7M9 16h5"/></svg></span>审计</button>
       <button class="nav-item" data-view="settings"><span class="ico"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></span>设置</button>
     </nav>
     <div class="side-sec">
@@ -69,6 +71,7 @@
         <div class="chat-attach" id="chatAttach"></div>
         <div class="chat-ctx-chips" id="chatCtxChips"></div>
         <div class="chat-in">
+          <select id="presetSel" class="inp" style="max-width:110px" title="模型预设"></select>
           <button class="btn ghost" id="btnMic" title="按一下说 5 秒">🎤</button>
           <button class="btn ghost" id="btnAttach" title="附带项目里的文件">📎</button>
           <textarea id="chatInput" rows="2" placeholder="例如：把 D 盘这个项目里的报价单整理成一张表（Enter 发送，Shift+Enter 换行）"></textarea>
@@ -198,6 +201,26 @@
       </div>
     </section>
 
+    <section class="view" id="view-usage">
+      <div class="card">
+        <div class="card-h"><div><h3>用量与配额</h3><p class="sub">数字来自 Octop 云端账单，配额在本地设、本地提醒</p></div><button class="btn ghost" id="btnUsageRefresh">刷新</button></div>
+        <div id="usageStat" class="list"><div class="sub">加载中…</div></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h3>额度设置</h3></div>
+        <label class="field"><span>每日 token 上限</span><input id="quotaDaily" placeholder="例如 20000000" /></label>
+        <label class="field"><span>每月 token 上限</span><input id="quotaMonthly" placeholder="例如 400000000" /></label>
+        <button class="btn primary" id="btnQuotaSave">保存额度</button>
+        <p class="sub" style="margin-top:8px">超八成时这里会提醒，不会阻断发送。</p>
+      </div>
+    </section>
+    <section class="view" id="view-audit">
+      <div class="card">
+        <div class="card-h"><div><h3>执行审计</h3><p class="sub">本机记录：工具调用、命令执行、文档入库、拦截，只记摘要</p></div><button class="btn ghost" id="btnAuditExport">导出 CSV</button></div>
+        <div style="display:flex;gap:8px;margin-bottom:10px"><select id="auditDay" class="inp" style="max-width:180px"></select><button class="btn ghost" id="btnAuditReload">刷新</button></div>
+        <div id="auditList" class="list"><div class="sub">加载中…</div></div>
+      </div>
+    </section>
     <section class="view" id="view-settings">
       <div class="card">
         <div class="card-h"><h3>连接 Octop（主）</h3></div>

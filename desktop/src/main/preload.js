@@ -58,6 +58,19 @@ contextBridge.exposeInMainWorld('wb', {
   octopSkills: (p) => ipcRenderer.invoke('octop:skills', p),
   octopCandidateAction: (p) => ipcRenderer.invoke('octop:candidateAction', p),
   skillStats: () => ipcRenderer.invoke('cloud:skillStats'),
+  auditList: (day) => ipcRenderer.invoke("audit:list", day),
+  auditExport: (day) => ipcRenderer.invoke("audit:export", day),
+  auditDays: () => ipcRenderer.invoke("audit:days"),
+  usageSummary: () => ipcRenderer.invoke("usage:summary"),
+  saveQuota: (q) => ipcRenderer.invoke("usage:quota", q),
+  uploadDocs: (payload) => ipcRenderer.invoke("kb:uploadDoc", payload),
+  getPresets: () => ipcRenderer.invoke("models:presets"),
+  savePresets: (p) => ipcRenderer.invoke("models:savePresets", p),
+  applyPreset: (id) => ipcRenderer.invoke("models:applyPreset", id),
+  guardConfig: () => ipcRenderer.invoke("guard:config"),
+  guardSave: (g) => ipcRenderer.invoke("guard:save", g),
+  guardCheck: (t) => ipcRenderer.invoke("guard:check", t),
+  pickFiles: () => ipcRenderer.invoke("dialog:pickFiles"),
   filePathOf: (f) => {
     try {
       const { webUtils } = require('electron');
