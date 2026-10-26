@@ -305,7 +305,7 @@ function renderProjects() {
     $('#brText').dataset.dir = p.dir;
     $('#briefModal').classList.add('show');
   });
-  $$('[data-del]').forEach((b) => b.onclick = async (e) => { e.stopPropagation(); await api.removeProject(b.dataset.del); await refresh(); toast('已移除'); });
+  $$('[data-del]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); const pid = b.dataset.del; showConfirm('移除项目', '只会取消登记，不会删你的文件。', async () => { await api.removeProject(pid); await refresh(); toast('已移除'); }); });
 }
 async function openProject(id) {
   const p = (SNAP?.cfg?.projects || []).find((x) => x.id === id); if (!p) return;
@@ -617,6 +617,24 @@ let curKbId = "";
 let ctxTab = "files";
 
 
+
+let confirmCb = null;
+function showConfirm(title, text, cb) {
+  const m = $("#confirmModal");
+  if (!m) { if (cb) cb(); return; }
+  const t = $("#cfTitle"), b = $("#cfText");
+  if (t) t.textContent = title || "确认";
+  if (b) b.textContent = text || "确定吗？";
+  confirmCb = cb || null;
+  m.classList.add("show");
+}
+function bindConfirmModal() {
+  const close = () => { $("#confirmModal").classList.remove("show"); confirmCb = null; };
+  const ok = $("#cfOk"), cancel = $("#cfCancel");
+  if (cancel) cancel.onclick = close;
+  if (ok) ok.onclick = () => { const cb = confirmCb; close(); if (cb) cb(); };
+}
+
 function friendlyError(raw) {
   const s = String(raw || "");
   if (!s) return "出了点问题，再试一次";
@@ -896,10 +914,14 @@ function renderSessions() {
     el.onclick = (e) => {
       e.stopPropagation();
       const id = el.dataset.del;
-      sessions = sessions.filter((s) => s.id !== id);
-      if (!sessions.length) sessions.push(newSessionObj('新会话'));
-      if (curSession === id) curSession = sessions[0].id;
-      saveSessions(); renderSessions(); renderChat();
+      const target = sessions.find((s) => s.id === id);
+      showConfirm('删除会话', '「' + ((target && target.title) || '该会话') + '」会被删掉，不能恢复。', () => {
+        sessions = sessions.filter((s) => s.id !== id);
+        if (!sessions.length) sessions.push(newSessionObj('新会话'));
+        if (curSession === id) curSession = sessions[0].id;
+        saveSessions(); renderSessions(); renderChat();
+        toast('已删除会话');
+      });
     };
   });
 }
@@ -1034,7 +1056,13 @@ async function sendChat() {
   renderChat();
   const box = $('#chatBody');
   const tip = document.createElement('div');
-  tip.className = 'typing'; tip.innerHTML = '助理思考中<i></i><i></i><i></i>'; box.appendChild(tip); box.scrollTop = box.scrollHeight;
+  tip.className = 'typing';
+  let waited = 0;
+  const paint = () => { tip.innerHTML = '助理思考中 ' + waited + 's<i></i><i></i><i></i>'; };
+  paint();
+  const tipTimer = setInterval(() => { waited += 1; paint(); }, 1000);
+  tip._timer = tipTimer;
+  box.appendChild(tip); box.scrollTop = box.scrollHeight;
   const proj = $('#chatProject') ? $('#chatProject').value : '';
   const expert = $('#chatExpert') ? $('#chatExpert').value : '';
   let r;
@@ -1045,6 +1073,7 @@ async function sendChat() {
     r = await api.chat(text, sid, attachments.slice(), proj, expert);
   }
   attachments = []; renderAttach();
+  if (tip._timer) clearInterval(tip._timer);
   tip.remove();
   // 只写回发起这条消息的会话（即使中途切走了）
   if (r && r.ok) s.msgs.push({ role: 'ai', text: r.data.reply || '(空)', meta: (r.data.elapsed_ms || 0) + 'ms' });
@@ -1081,8 +1110,11 @@ function bindChat() {
   sel.innerHTML = (cfg.projects || []).map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('') || '<option value="">（先添加项目）</option>';
   const mic = $('#btnMic');
   if (mic) mic.onclick = async () => {
-    mic.textContent = '🔴';
+    let left = 5;
+    mic.textContent = '🔴 ' + left + 's';
+    const tick = setInterval(() => { left -= 1; if (left > 0) mic.textContent = '🔴 ' + left + 's'; }, 1000);
     const rec = await api.recordAudio({ seconds: 5 });
+    clearInterval(tick);
     if (!rec || !rec.ok) { mic.textContent = '🎤'; toast(rec && rec.error ? rec.error : '录音失败'); return; }
     mic.textContent = '…';
     const st = await api.octopStt({ file: rec.file });
@@ -1127,6 +1159,7 @@ function bind() {
   bindModal();
   bindNameModal();
   bindBriefModal();
+  bindConfirmModal();
   bindPreviewModal();
   bindSkillsModal();
   bindLogin();

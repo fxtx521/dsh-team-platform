@@ -5,6 +5,24 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ---
 
+## [0.39.0] - 2026-10-26
+
+### 中文
+
+- **删除确认**：会话删除、项目移除都先弹确认框，项目那条还写明「只取消登记，不删文件」
+- **录音倒计时**：点麦克风后按钮显示 5 秒倒计时，不再让人干等不知道录没录
+- **思考计时**：助理回复前的等待提示带上秒数，长任务能看出过了多久
+- 已验证：语法检查通过、打包启动后 Octop 连接正常、MCP 200
+
+### English
+
+- **Confirmations**: deleting a session or removing a project now asks first (the project dialog notes that files are untouched)
+- **Recording countdown**: the mic button counts down 5 seconds so you know it is recording
+- **Waiting timer**: the thinking indicator shows elapsed seconds, useful for long turns
+- Verified with syntax checks; app starts with Octop connected and MCP healthy
+
+---
+
 ## [0.38.0] - 2026-10-26
 
 ### 中文
