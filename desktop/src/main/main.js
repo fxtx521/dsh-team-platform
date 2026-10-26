@@ -409,6 +409,45 @@ handle("audit:days", async () => {
 
 
 // ── 用量与配额 ──────────────────────────────────────────
+// ── 渠道（飞书/企微/钉钉/Slack）─────────────────────────
+handle("channel:list", async () => {
+  const cfg = readCfg();
+  if (!cfg.octopAgent) return { ok: false, error: "还没选助理", list: [] };
+  const r = await octopFetch("GET", "/api/agents/" + cfg.octopAgent + "/channels");
+  return { ok: r.ok, list: (r.ok && Array.isArray(r.data)) ? r.data : [], error: r.ok ? "" : JSON.stringify(r.data).slice(0, 200) };
+});
+
+handle("channel:add", async (_e, payload) => {
+  const cfg = readCfg();
+  if (!cfg.octopAgent) return { ok: false, error: "还没选助理" };
+  const type = String((payload && payload.type) || "feishu");
+  const config = (payload && payload.config) || {};
+  const tries = [
+    { channel_type: type, config, enabled: true },
+    { type, config, enabled: true },
+    { type, app_id: config.app_id, app_secret: config.app_secret, enabled: true },
+  ];
+  let last = null;
+  for (const body of tries) {
+    const r = await octopFetch("POST", "/api/agents/" + cfg.octopAgent + "/channels", body);
+    if (r.ok) {
+      audit("channel", "添加渠道", type, true, 0);
+      return { ok: true, data: r.data };
+    }
+    last = r;
+  }
+  audit("channel", "添加渠道失败", type, false, 0);
+  return { ok: false, error: JSON.stringify((last && last.data) || {}).slice(0, 300) };
+});
+
+handle("channel:remove", async (_e, id) => {
+  const cfg = readCfg();
+  if (!cfg.octopAgent) return { ok: false, error: "还没选助理" };
+  const r = await octopFetch("DELETE", "/api/agents/" + cfg.octopAgent + "/channels/" + encodeURIComponent(id));
+  audit("channel", "删除渠道", String(id), r.ok, 0);
+  return { ok: r.ok, error: r.ok ? "" : JSON.stringify(r.data).slice(0, 200) };
+});
+
 handle("session:export", async (_e, { title, content }) => {
   try {
     const dir = app.getPath("downloads");

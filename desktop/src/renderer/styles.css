@@ -308,3 +308,35 @@ select{width:100%;border:1px solid var(--line);border-radius:11px;padding:10px 1
 .typing i:nth-child(2){animation-delay:.2s}.typing i:nth-child(3){animation-delay:.4s}
 @keyframes blink{0%,100%{opacity:.25}50%{opacity:1}}
 
+
+/* ── 深色模式（2026-10-27 新增）── */
+body.dark{
+  --bg:#0f1116; --panel:#171a21; --line:#262b35; --ink:#e5e7eb; --muted:#9aa3b2;
+  --brand-soft:#3a2415; --brand-ink:#ffab73;
+  --shadow:0 10px 30px rgba(0,0,0,.45); --ring:0 0 0 1px rgba(255,255,255,.04);
+}
+body.dark .sidebar, body.dark .chat-attach, body.dark .chat-in, body.dark .modal,
+body.dark .project, body.dark .expert-card, body.dark .btn.ghost, body.dark .msg.ai,
+body.dark .logbox, body.dark .chat-head, body.dark .chat-main{background:var(--panel)!important;color:var(--ink)}
+body.dark .btn{background:#222834;color:#d7dbe3}
+body.dark .btn.ghost{border-color:var(--line)}
+body.dark .nav-item{color:#c3c9d4}
+body.dark .nav-item:hover, body.dark .btn.ghost:hover{background:#20252f}
+body.dark .nav-item.active{background:#3a2415;color:#ffab73}
+body.dark .hero{background:linear-gradient(120deg,#1a1e27 0%,#241a12 60%,#2c1d10 100%);border-color:#3a2a1b}
+body.dark .item{background:#1b1f28;border-color:var(--line)}
+body.dark .item:hover{background:#20252f;border-color:#4a3a28}
+body.dark .field input, body.dark .field textarea, body.dark .field select, body.dark .inp,
+body.dark #chatInput, body.dark .chat-search, body.dark select, body.dark input, body.dark textarea{background:#12151c!important;color:var(--ink);border-color:var(--line)}
+body.dark .msg.user{background:#2f2016;color:#ffe9d8}
+body.dark .msg.user .meta{color:#d9b79a}
+body.dark .msg.ai{border-color:var(--line)}
+body.dark .row{border-color:#222833}
+body.dark .sub, body.dark .muted{color:var(--muted)}
+body.dark .modal-b, body.dark .modal-h{border-color:var(--line)}
+body.dark .chip{background:#20252f;color:#cfd5df}
+body.dark .badge{background:#20252f;color:#cfd5df}
+body.dark .typing{background:#1b1f28;color:#cfd5df}
+body.dark h1,body.dark h2,body.dark h3,body.dark b,body.dark strong{color:#f1f3f6}
+body.dark ::-webkit-scrollbar-thumb{background:#2b3240}
+

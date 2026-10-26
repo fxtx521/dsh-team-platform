@@ -698,6 +698,36 @@ async function loadAudit(day) {
   }).join("");
 }
 
+
+function applyTheme(theme) {
+  const dark = theme === "dark";
+  document.body.classList.toggle("dark", dark);
+  const cb = $("#cfgDark");
+  if (cb) cb.checked = dark;
+}
+
+
+async function loadChannels() {
+  const box = $("#channelList"); if (!box) return;
+  const r = await api.channelList();
+  const list = (r && r.list) || [];
+  if (!r || !r.ok) { box.innerHTML = '<div class="sub">' + esc((r && r.error) || "取不到渠道列表") + "</div>"; return; }
+  if (!list.length) { box.innerHTML = '<div class="sub">还没有接入任何渠道</div>'; return; }
+  box.innerHTML = list.map((c) => {
+    const id = c.id || c.channel_id || "";
+    const name = c.name || c.channel_type || c.type || "渠道";
+    const on = c.enabled === false ? "已停用" : "已启用";
+    return '<div class="row"><b>' + esc(String(name)) + '</b><span>' + esc(on) + ' <button class="mini" data-chdel="' + esc(String(id)) + '">删除</button></span></div>';
+  }).join("");
+  box.querySelectorAll("[data-chdel]").forEach((el) => {
+    el.onclick = async () => {
+      const ok = await api.channelRemove(el.dataset.chdel);
+      toast(ok && ok.ok ? "已删除" : "删除失败");
+      loadChannels();
+    };
+  });
+}
+
 function friendlyError(raw) {
   const s = String(raw || "");
   if (!s) return "出了点问题，再试一次";
@@ -1323,6 +1353,19 @@ function bind() {
       ps.onchange = async () => { const out = await api.applyPreset(ps.value); toast(out && out.ok ? ("已切到" + (((r.presets || []).find((x) => x.id === ps.value) || {}).name || "")) : "切换失败"); };
     }).catch(() => {});
   }
+  const chR = $("#btnChannelRefresh"); if (chR) chR.onclick = loadChannels;
+  const chA = $("#btnChannelAdd");
+  if (chA) chA.onclick = async () => {
+    const type = ($("#chType") || {}).value || "feishu";
+    const appId = (($("#chAppId") || {}).value || "").trim();
+    const secret = (($("#chSecret") || {}).value || "").trim();
+    if (!appId || !secret) { toast("App ID 和 Secret 都要填"); return; }
+    chA.textContent = "提交中…";
+    const r = await api.channelAdd({ type, config: { app_id: appId, app_secret: secret } });
+    chA.textContent = "保存并启用";
+    if (r && r.ok) { toast("已提交给云端，稍等它验通"); if ($("#chSecret")) $("#chSecret").value = ""; loadChannels(); }
+    else toast("云端拒绝了：" + ((r && r.error) || "未知原因").slice(0, 120));
+  };
   const exBtn = $("#btnExportSession");
   if (exBtn) exBtn.onclick = async () => {
     const s = getSession();
@@ -1353,6 +1396,16 @@ function bind() {
   const er = $("#btnExpertRefresh");
   if (er) er.onclick = loadExpertsPage;
   const onb = $("#btnOnboardOk");
+  const darkCb = $("#cfgDark");
+  if (darkCb) {
+    darkCb.checked = (SNAP?.cfg?.theme === "dark");
+    darkCb.onchange = async () => {
+      const theme = darkCb.checked ? "dark" : "light";
+      applyTheme(theme);
+      await api.saveConfig({ theme });
+      toast(theme === "dark" ? "已切到深色" : "已切到浅色");
+    };
+  }
   if (onb) onb.onclick = async () => {
     await api.saveConfig({ onboarded: true });
     $("#onboardModal").classList.remove("show");
@@ -1394,7 +1447,7 @@ function bind() {
     if (m) m.classList.add('show');
     toast('登录已过期，请重新登录');
   });
-  api.onState && api.onState((d) => { SNAP = d; renderConn(); renderHome(); renderProjects(); });
+  api.onState && api.onState((d) => { SNAP = d; applyTheme((d && d.cfg && d.cfg.theme) || "light"); renderConn(); renderHome(); renderProjects(); });
   api.onLog && api.onLog((rec) => { if (SNAP?.state) { SNAP.state.log.unshift(rec); renderHome(); } });
   api.onGoto && api.onGoto((v) => go(v));
 }

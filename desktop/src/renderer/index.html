@@ -224,9 +224,26 @@
     </section>
     <section class="view" id="view-settings">
       <div class="card">
+        <div class="card-h"><div><h3>渠道接入</h3><p class="sub">把助理接到飞书、企微、钉钉；凭证只发给云端 Octop，本地不保存</p></div><button class="btn ghost" id="btnChannelRefresh">刷新</button></div>
+        <div class="row2" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+          <select id="chType" class="inp" style="max-width:140px">
+            <option value="feishu">飞书</option>
+            <option value="wecom">企业微信</option>
+            <option value="dingtalk">钉钉</option>
+            <option value="slack">Slack</option>
+          </select>
+          <input id="chAppId" class="inp" placeholder="App ID" style="max-width:220px" />
+          <input id="chSecret" class="inp" placeholder="App Secret" style="max-width:260px" type="password" />
+          <button class="btn primary" id="btnChannelAdd">保存并启用</button>
+        </div>
+        <div id="channelList" class="list"><div class="sub">加载中…</div></div>
+      </div>
+
+      <div class="card">
         <div class="card-h"><h3>连接 Octop（主）</h3></div>
         <label class="field"><span>Octop 地址</span><input id="cfgOctop" placeholder="http://192.168.1.239:18090" /></label>
         <p class="sub" id="octopWho" style="margin-bottom:10px">未登录</p>
+        <label class="switch"><input type="checkbox" id="cfgDark" /><span>深色模式</span></label>
         <button class="btn primary" id="btnSaveOctop">保存</button>
         <button class="btn ghost" id="btnLogoutOctop" style="margin-left:8px">退出登录</button>
       </div>

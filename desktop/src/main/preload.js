@@ -72,6 +72,9 @@ contextBridge.exposeInMainWorld('wb', {
   guardCheck: (t) => ipcRenderer.invoke("guard:check", t),
   pickFiles: () => ipcRenderer.invoke("dialog:pickFiles"),
   exportSession: (payload) => ipcRenderer.invoke("session:export", payload),
+  channelList: () => ipcRenderer.invoke("channel:list"),
+  channelAdd: (payload) => ipcRenderer.invoke("channel:add", payload),
+  channelRemove: (id) => ipcRenderer.invoke("channel:remove", id),
   filePathOf: (f) => {
     try {
       const { webUtils } = require('electron');
