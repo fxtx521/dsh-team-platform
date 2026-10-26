@@ -188,7 +188,14 @@ function startMcpTunnel() {
     const args = ["-N", "-R", "18991:127.0.0.1:18991", "-p", port, "-i", sshKey,
       "-o", "BatchMode=yes", "-o", "UserKnownHostsFile=" + kh, "-o", "StrictHostKeyChecking=accept-new",
       "-o", "ExitOnForwardFailure=yes", "-o", "ServerAliveInterval=30", host];
+    // 单实例：先杀掉上次 App 遗留的隧道子进程，避免多个隧道抢同一远端端口
+    try {
+      const pidFile = path.join(app.getPath("userData"), "tunnel.pid");
+      const oldPid = parseInt(fs.readFileSync(pidFile, "utf8"), 10);
+      if (oldPid > 0 && oldPid !== process.pid) { try { process.kill(oldPid, "SIGTERM"); log("已清理旧隧道 pid=" + oldPid); } catch {} }
+    } catch {}
     tunnelChild = spawn("ssh", args, { stdio: "ignore" });
+    try { fs.writeFileSync(path.join(app.getPath("userData"), "tunnel.pid"), String(tunnelChild.pid || ""), "utf8"); } catch {}
     tunnelChild.on("exit", () => { tunnelChild = null; setTimeout(spawnTunnel, 8000); });
     log("MCP 隧道已启动（自动重连）");
   };
@@ -373,8 +380,14 @@ function auditDir() {
   return d;
 }
 
+function localDay() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+}
+
 function auditFile(day) {
-  const d = day || new Date().toISOString().slice(0, 10);
+  const d = day || localDay();
   return path.join(auditDir(), d + ".jsonl");
 }
 
@@ -397,7 +410,7 @@ function auditExport(day) {
   const rows = auditList(day);
   const head = "时间,类型,动作,对象,结果,耗时毫秒";
   const body = rows.map((r) => [r.ts, r.kind, r.action, String(r.detail || "").replace(/[",\n]/g, " "), r.ok ? "成功" : "失败", r.ms].join(","));
-  const target = path.join(app.getPath("userData"), "audit", "audit-" + (day || new Date().toISOString().slice(0, 10)) + ".csv");
+  const target = path.join(app.getPath("userData"), "audit", "audit-" + (day || localDay()) + ".csv");
   try { fs.writeFileSync(target, "\ufeff" + [head].concat(body).join("\n"), "utf8"); return { ok: true, file: target, count: rows.length }; } catch (e) { return { ok: false, error: e.message }; }
 }
 
@@ -1626,6 +1639,7 @@ app.whenReady().then(() => {
   log('启动 · server=' + _c.serverUrl + ' octop=' + (_c.octopUrl || '-') + ' tok=' + (_c.octopToken ? 'yes' : 'no') + ' pid=' + process.pid);
   setTimeout(heartbeat, 1500);
   setInterval(heartbeat, 60 * 1000);
+  app.on("will-quit", () => { try { if (tunnelChild) tunnelChild.kill(); } catch {} });
   setTimeout(async () => {
     try {
       const credFile = path.join('/Users/liubang/Documents/deepseek-harness/default-workspace', '.octop-creds');

@@ -22,6 +22,24 @@ const MOCK = {
 const api = window.wb || {
   snapshot: async () => MOCK,
   saveConfig: async (p) => ({ ...MOCK.cfg, ...p }),
+  getPresets: async () => ({ presets: [{ id: "fast", name: "省钱" }, { id: "write", name: "写作" }, { id: "deep", name: "深度分析" }], active: "write" }),
+  applyPreset: async () => ({ ok: true }),
+  savePresets: async () => ({ ok: true }),
+  usageSummary: async () => ({ ok: true, data: { window: "last_30d", total_tokens: 0, input_tokens: 0, output_tokens: 0, cache_hit_percent: 0, model_calls: 0, turns: 0, buckets: [] }, quota: { dailyTokens: 0, monthlyTokens: 0 } }),
+  saveQuota: async () => ({ ok: true }),
+  auditDays: async () => [new Date().toISOString().slice(0, 10)],
+  auditList: async () => [],
+  auditExport: async () => ({ ok: true, count: 0 }),
+  uploadDocs: async () => ({ ok: true, results: [] }),
+  pickFiles: async () => [],
+  exportSession: async () => ({ ok: true, file: "preview.md" }),
+  channelList: async () => ({ ok: true, list: [] }),
+  channelAdd: async () => ({ ok: true }),
+  channelRemove: async () => ({ ok: true }),
+  guardCheck: async () => ({ blocked: false, block: [], warn: [] }),
+  guardConfig: async () => ({ enabled: true, block: [], warn: [] }),
+  guardSave: async () => ({ ok: true }),
+  onNeedLogin: () => {},
   pickFolder: async () => '~/Documents/砺项目/新项目',
   addProject: async () => MOCK.cfg.projects,
   removeProject: async () => MOCK.cfg.projects,
@@ -692,7 +710,7 @@ async function loadAudit(day) {
   const rows = await api.auditList(target);
   if (!rows.length) { box.innerHTML = '<div class="sub">这一天还没有记录</div>'; return; }
   box.innerHTML = rows.slice().reverse().map((r) => {
-    const t = String(r.ts || "").slice(11, 19);
+    const t = (() => { try { return new Date(r.ts).toLocaleTimeString("zh-CN", { hour12: false }); } catch { return String(r.ts || "").slice(11, 19); } })();
     const icon = r.ok ? "✅" : "❌";
     return "<div class=\"row\"><b>" + esc(t) + " " + esc(r.kind || "") + "</b><span>" + icon + " " + esc(r.action || "") + (r.detail ? " · " + esc(String(r.detail).slice(0, 80)) : "") + (r.ms ? " · " + r.ms + "ms" : "") + "</span></div>";
   }).join("");

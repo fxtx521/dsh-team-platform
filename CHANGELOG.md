@@ -5,7 +5,43 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ---
 
-## [0.41.0] - 2026-10-26
+## [0.42.0] - 2026-10-27
+
+说明：此前误发了 v0.5.0 / v0.6.0 两个版本号，按语义化版本它们低于 0.41.0，会导致老客户端不认更新。本版把两批改动合并为 0.42.0，v0.5.0 / v0.6.0 已标记为预发布，请以本版为准。
+
+### 中文
+
+- **执行审计**：工具调用、命令执行、文档入库、渠道操作、拦截全留痕（只记摘要），按本地日期分文件，可导出 CSV；时间按本地时区显示
+- **用量与配额**：读 Octop 账单显示累计 token、输入输出、缓存命中率、调用与轮次、最近一天用量；可设每日/每月 token 额度，超八成提醒
+- **文档解析入库**：知识库上传支持 docx、pdf、xlsx、txt、md，本地解析成文本再传云端
+- **模型预设**：对话区一键切换省钱 / 写作 / 深度分析
+- **敏感拦截**：发送前本地规则校验，拦截词直接不发，提醒词照常发
+- **渠道接入**：设置页填飞书 / 企微 / 钉钉 / Slack 的 App ID 与 Secret，提交给云端 Octop 绑定，可看列表、可删除；凭证只发云端不留本地
+- **会话导出**：当前对话导出 Markdown 到下载目录
+- **快捷键**：Cmd+K 搜会话、Cmd+Shift+N 新建、Cmd+Enter 发送
+- **失败自动重试**：一轮失败先自动重试一次再报错
+- **深色模式**：设置里开关，重启保持
+- **稳定性**：登录凭据加密保存且修复了勾选「记住登录」不生效的问题；MCP 隧道单实例（清理遗留隧道进程）；非 macOS 不拉隧道；未登录不刷 401；MCP 会话协议补齐；IPC 幂等注册
+- **验证**：独立子代理复测通过（语法、IPC 74/74、8 个页面无运行时报错、MCP 200、审计落盘、云端接口 200、版本一致）；助理调本地工具 9 秒返回
+
+### English
+
+- **Audit trail** with local dates and local-time display, CSV export
+- **Usage and quotas** panel backed by Octop billing, with daily/monthly token limits and 80% warnings
+- **Document ingest** for docx/pdf/xlsx/txt/md parsed locally before upload
+- **Model presets** (budget / writing / deep analysis)
+- **Sensitive guard** before sending
+- **Channel onboarding** for Feishu / WeCom / DingTalk / Slack via the cloud Octop
+- **Session export** to Markdown
+- **Shortcuts** Cmd+K / Cmd+Shift+N / Cmd+Enter
+- **Automatic single retry** on a failed turn
+- **Dark mode** toggle, persisted
+- **Reliability fixes**: encrypted credentials and a real fix for the remember-login flag, single-instance MCP tunnel, no tunnel on non-macOS, no 401 spam while logged out, MCP session protocol, idempotent IPC
+- Verified by an independent subagent: syntax, 74/74 IPC parity, 8 pages without runtime errors, MCP 200, audit rows, cloud endpoints 200, version consistency
+
+---
+
+## [0.6.0] - 2026-10-27
 
 ### 中文
 
