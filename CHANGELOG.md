@@ -5,6 +5,24 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ---
 
+## [0.40.0] - 2026-10-26
+
+### 中文
+
+- **长任务实时进度**：等待提示从「思考中 N 秒」升级为「思考中 N 秒 · 第 k 步：读取 报价单.xlsx」
+- 每当云端调用本地工具（列目录、读写文件、搜索、执行命令），进度条上的步骤号和当前动作会立刻更新
+- 步骤内容同时以条目形式留在对话里，跑完可回看每一步
+- 已验证：语法检查、打包启动、Octop 连接正常、本地 MCP 200
+
+### English
+
+- **Live progress for long turns**: the waiting indicator now reads like \"thinking 12s · step 3: read quote.xlsx\" instead of only a timer
+- Every local tool call (list/read/write/search/run) immediately updates the step number and current action
+- Each step is also appended to the conversation so the whole run can be reviewed afterwards
+- Verified with syntax checks and a rebuilt app; Octop connected, local MCP healthy
+
+---
+
 ## [0.39.0] - 2026-10-26
 
 ### 中文

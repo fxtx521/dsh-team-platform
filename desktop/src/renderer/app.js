@@ -868,6 +868,9 @@ let chatMsgs = [];
 let attachments = [];  // 本轮对话附带的本地文件
 let pickedSkills = [];   // 本轮对话启用的技能
 let pickedKbs = [];      // 本轮对话引用的知识库
+let activeTip = null;
+let activeSteps = 0;
+let activeTool = "";
 let cmdHistory = [];     // 终端命令历史
 let histIdx = 0;
 
@@ -1060,8 +1063,17 @@ async function sendChat() {
   let waited = 0;
   const paint = () => { tip.innerHTML = '助理思考中 ' + waited + 's<i></i><i></i><i></i>'; };
   paint();
-  const tipTimer = setInterval(() => { waited += 1; paint(); }, 1000);
+  const tipTimer = setInterval(() => { if (tip._tick) tip._tick(); }, 1000);
   tip._timer = tipTimer;
+  tip._paint = () => {
+    const extra = activeSteps > 0 ? (" · 第 " + activeSteps + " 步" + (activeTool ? "：" + activeTool : "")) : "";
+    tip.innerHTML = "助理思考中 " + waited + "s" + extra + "<i></i><i></i><i></i>";
+  };
+  tip._waited = () => waited;
+  tip._tick = () => { waited += 1; if (tip._paint) tip._paint(); };
+  activeTip = tip;
+  activeSteps = 0;
+  activeTool = "";
   box.appendChild(tip); box.scrollTop = box.scrollHeight;
   const proj = $('#chatProject') ? $('#chatProject').value : '';
   const expert = $('#chatExpert') ? $('#chatExpert').value : '';
@@ -1074,6 +1086,7 @@ async function sendChat() {
   }
   attachments = []; renderAttach();
   if (tip._timer) clearInterval(tip._timer);
+  if (activeTip === tip) { activeTip = null; activeSteps = 0; activeTool = ""; }
   tip.remove();
   // 只写回发起这条消息的会话（即使中途切走了）
   if (r && r.ok) s.msgs.push({ role: 'ai', text: r.data.reply || '(空)', meta: (r.data.elapsed_ms || 0) + 'ms' });
@@ -1260,6 +1273,9 @@ function bind() {
       local_write_file: '✍️ 写入文件', local_run_cmd: '⌨️ 执行命令',
     };
     const label = (map[d.tool] || d.tool) + (d.argsText ? ' · ' + String(d.argsText).split(/[\\/]/).pop() : '') + (d.ms != null ? ' · ' + d.ms + 'ms' : '');
+    activeSteps += 1;
+    activeTool = label;
+    if (activeTip && activeTip._paint) activeTip._paint();
     s.msgs.push({ role: 'sys', text: (d.ok ? '✅ ' : '❌ ') + label,
                   file: (d.tool === 'local_read_file' || d.tool === 'local_write_file') ? d.path : '',
                   out: d.outputPreview || '' });
