@@ -503,6 +503,23 @@ function loadCapabilitiesWith(c) {
       if (e.key === 'ArrowDown') { e.preventDefault(); if (cmdHistory.length) { histIdx = Math.min(histIdx + 1, cmdHistory.length); cmdEl.value = cmdHistory[histIdx] || ''; } }
     });
   }
+  const dz = document.querySelector('.chat-card');
+  if (dz && !dz._dropBound) {
+    dz._dropBound = true;
+    dz.addEventListener('dragover', function (e) { e.preventDefault(); });
+    dz.addEventListener('drop', function (e) {
+      e.preventDefault();
+      const files = Array.prototype.slice.call(e.dataTransfer.files || []);
+      let added = 0;
+      files.forEach(function (f) {
+        const p = api.filePathOf ? api.filePathOf(f) : '';
+        if (!p) return;
+        if (!attachments.some(function (x) { return x.path === p; })) { attachments.push({ name: f.name, path: p }); added += 1; }
+      });
+      renderAttach();
+      if (added) toast('已拖入 ' + added + ' 个文件');
+    });
+  }
   const cs = $('#chatSearch');
   if (cs) cs.addEventListener('input', renderSessions);
   const kbBtn = $('#btnKbPick');
@@ -920,7 +937,7 @@ function md(src) {
 function renderChat() {
   const s = getSession(); if (!s) return;
   const box = $('#chatBody');
-  box.innerHTML = (s.msgs || []).map((m, i) => `<div class="msg ${m.role}">${m.role === 'ai' ? md(m.text) : esc(m.text)}${m.role === 'ai' ? `<span class="meta"><button class="mini" data-copy="${i}">复制</button><button class="mini" data-regen="${i}">重新生成</button><button class="mini" data-speak="${i}">🔊 朗读</button><button class="mini" data-save="${i}">保存到项目</button>${m.meta ? ' · ' + esc(m.meta) : ''}</span>` : (m.role === 'sys' ? `data-file="${esc(m.file || '')}" data-out="${i}" style="cursor:pointer" title="点开看内容/输出"` : (m.meta ? `<span class="meta">${esc(m.meta)}</span>` : ''))}</div>`).join('');
+  box.innerHTML = (s.msgs || []).map((m, i) => `<div class="msg ${m.role}">${m.role === 'ai' ? md(m.text) : esc(m.text)}${m.role === 'ai' ? `<span class="meta">${String(m.text || '').startsWith('⚠️') ? `<button class="mini" data-retry="${i}">重试</button>` : ''}<button class="mini" data-copy="${i}">复制</button><button class="mini" data-regen="${i}">重新生成</button><button class="mini" data-speak="${i}">🔊 朗读</button><button class="mini" data-save="${i}">保存到项目</button>${m.meta ? ' · ' + esc(m.meta) : ''}</span>` : (m.role === 'sys' ? `data-file="${esc(m.file || '')}" data-out="${i}" style="cursor:pointer" title="点开看内容/输出"` : (m.meta ? `<span class="meta">${esc(m.meta)}</span>` : ''))}</div>`).join('');
   if (!s.msgs || !s.msgs.length) {
     const samples = [
       '把这个项目里的台账整理成一张表',
@@ -952,6 +969,20 @@ function renderChat() {
       const idx = parseInt(el.dataset.out || '-1', 10);
       const m = idx >= 0 ? (s.msgs || [])[idx] : null;
       if (m && m.out) showText(el.textContent, m.out);
+    };
+  });
+  box.querySelectorAll('[data-retry]').forEach((el) => {
+    el.onclick = () => {
+      const idx = parseInt(el.dataset.retry, 10);
+      const msgs = s.msgs || [];
+      let u = -1;
+      for (let k = idx - 1; k >= 0; k -= 1) { if (msgs[k].role === 'user') { u = k; break; } }
+      if (u < 0) return;
+      const text = msgs[u].text;
+      msgs.splice(u);
+      saveSessions(); renderChat();
+      const inp = $('#chatInput'); if (inp) inp.value = text;
+      sendChat();
     };
   });
   box.querySelectorAll('[data-copy]').forEach((el) => {

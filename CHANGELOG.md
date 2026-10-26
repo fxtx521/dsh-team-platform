@@ -5,6 +5,22 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ---
 
+## [0.38.0] - 2026-10-26
+
+### 中文
+
+- **失败重试**：对话出错的那条消息上直接给「重试」按钮，点一下重新发一遍，不用手动重敲
+- **拖拽文件**：把文件直接拖进对话区域就能附加为上下文（走系统文件路径，不复制内容）
+- 两项都做了语法检查与重新打包验证，启动后日志显示 Octop 连接正常、本地 MCP 200
+
+### English
+
+- **Retry on failure**: failed replies show a Retry button that re-sends the same prompt
+- **Drag and drop**: drop files onto the chat area to attach them as context (uses the real file path)
+- Verified with syntax checks and a rebuilt app; startup logs show Octop connected and local MCP healthy
+
+---
+
 ## [0.37.0] - 2026-10-24
 
 ### 中文

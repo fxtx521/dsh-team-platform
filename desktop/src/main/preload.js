@@ -58,6 +58,12 @@ contextBridge.exposeInMainWorld('wb', {
   octopSkills: (p) => ipcRenderer.invoke('octop:skills', p),
   octopCandidateAction: (p) => ipcRenderer.invoke('octop:candidateAction', p),
   skillStats: () => ipcRenderer.invoke('cloud:skillStats'),
+  filePathOf: (f) => {
+    try {
+      const { webUtils } = require('electron');
+      return webUtils.getPathForFile(f) || '';
+    } catch (e) { return ''; }
+  },
   minimize: () => ipcRenderer.invoke('window:minimize'),
   close: () => ipcRenderer.invoke('window:close'),
   onState: (cb) => ipcRenderer.on('app:state', (_e, d) => cb(d)),
