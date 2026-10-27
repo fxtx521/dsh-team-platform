@@ -808,6 +808,14 @@ handle("cron:create", async (_e, payload) => {
   return { ok: r.ok, data: r.data, error: r.ok ? "" : JSON.stringify(r.data).slice(0, 300) };
 });
 
+handle("cron:setEnabled", async (_e, { id, enabled }) => {
+  const aid = await cronAgentId();
+  if (!aid || !id) return { ok: false, error: "缺少参数" };
+  const r = await octopFetch("PATCH", "/api/agents/" + aid + "/cron/" + encodeURIComponent(id), { enabled: !!enabled });
+  audit("cron", enabled ? "启用定时任务" : "停用定时任务", String(id), r.ok, 0);
+  return { ok: r.ok, error: r.ok ? "" : JSON.stringify(r.data).slice(0, 200) };
+});
+
 handle("cron:remove", async (_e, id) => {
   const aid = await cronAgentId();
   if (!aid || !id) return { ok: false, error: "缺少参数" };
@@ -1916,9 +1924,17 @@ async function octopChatOnce({ text, sessionId, agentId, skills, kbIds }) {
   if (!tk) return { ok: false, error: "未登录 Octop" };
   let aid = agentId || cfg.octopAgent;
   if (aid && aid !== cfg.octopAgent) {
-    // 传进来的是专家 id 时，先解析成助理 id
-    const known = (cfg.expertAgents || {})[aid];
-    aid = known || await resolveExpertAgent(aid);
+    // 先看是不是已有 agent（含 kind=team 的团队）：是就直接用，别当专家去解析
+    let direct = null;
+    try {
+      const list = await octopAgents();
+      if (Array.isArray(list) && list.some((a) => a.agent_id === aid || a.id === aid)) direct = aid;
+    } catch {}
+    if (!direct) {
+      const known = (cfg.expertAgents || {})[aid];
+      direct = known || await resolveExpertAgent(aid);
+    }
+    aid = direct;
     if (!aid) return { ok: false, error: "该专家暂时无法创建助理" };
   }
   if (!aid) aid = await ensureOctopAgent();
@@ -2096,7 +2112,7 @@ app.whenReady().then(() => {
   setTimeout(async () => {
     try {
       const r = await checkUpdate();
-      if (r && r.ok) log('更新检查: 当前 ' + r.current + ' / 最新 ' + r.latest + (r.hasUpdate ? '（有新版）' : '（已最新）'));
+      if (r && r.ok) log('更新检查: 当前 ' + r.current + ' / 更新源 ' + r.latest + (r.hasUpdate ? '（有新版）' : (r.ahead ? '（本地版本更高，无需更新）' : '（已最新）')));
       // 端到端自测钩子（仅当显式设置环境变量时执行，正常启动不会触发）
       let flagFile = false;
       try { flagFile = fs.existsSync(path.join(process.resourcesPath || "", "auto-update.flag")); } catch {}

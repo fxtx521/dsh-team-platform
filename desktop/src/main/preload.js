@@ -89,6 +89,7 @@ contextBridge.exposeInMainWorld('wb', {
   memoryDecide: (p) => ipcRenderer.invoke("memory:decide", p),
   cronList: () => ipcRenderer.invoke("cron:list"),
   cronCreate: (p) => ipcRenderer.invoke("cron:create", p),
+  cronSetEnabled: (p) => ipcRenderer.invoke("cron:setEnabled", p),
   cronRemove: (id) => ipcRenderer.invoke("cron:remove", id),
   cronRunNow: (id) => ipcRenderer.invoke("cron:runNow", id),
   teamsList: () => ipcRenderer.invoke("teams:list"),

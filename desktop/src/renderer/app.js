@@ -783,8 +783,18 @@ async function loadTeams() {
   box.innerHTML = list.map((t) => {
     const id = t.id || t.team_id || "";
     const members = t.member_ids || t.members || t.agent_ids || [];
-    return '<div class="row"><b>' + esc(String(t.name || "未命名团")) + "</b><span>" + members.length + " 人 · " + esc(String(t.status || "可用")) + ' <button class="mini" data-teamdel="' + esc(String(id)) + '">解散</button></span></div>';
+    return '<div class="row"><b>' + esc(String(t.name || "未命名团")) + "</b><span>" + members.length + " 人 · " + esc(String(t.state || t.status || "可用")) + ' <button class="mini" data-teamuse="' + esc(String(id)) + '">派活</button><button class="mini" data-teamdel="' + esc(String(id)) + '">解散</button></span></div>';
   }).join("");
+  box.querySelectorAll("[data-teamuse]").forEach((el) => {
+    el.onclick = () => {
+      const sel = $("#chatExpert");
+      if (sel) { sel.value = el.dataset.teamuse; pickedSkills = []; renderSkillCount(); }
+      go("chat");
+      const inp = $("#chatInput");
+      if (inp && !inp.value) inp.value = "请团队分工完成：";
+      toast("已选中这个团，把目标写清楚再发");
+    };
+  });
   box.querySelectorAll("[data-teamdel]").forEach((el) => {
     el.onclick = () => {
       showConfirm('解散专家团', '解散后成员之间不再协作，配置不能恢复。', async () => {
@@ -808,12 +818,21 @@ async function loadCron() {
     const id = j.id || j.job_id || "";
     const trig = String(j.trigger || "").replace(/^cron:/, "");
     const on = j.enabled === false ? "已停用" : "启用中";
-    return '<div class="row"><b>' + esc(String(j.name || j.prompt || "任务").slice(0, 24)) + "</b><span>" + esc(trig) + " · " + on + ' <button class="mini" data-cronrun="' + esc(String(id)) + '">立即跑</button><button class="mini" data-crondel="' + esc(String(id)) + '">删除</button></span></div>';
+    const next = j.next_run_at ? " · 下次 " + esc(fmtLocal(j.next_run_at)) : "";
+    return '<div class="row"><b>' + esc(String(j.name || j.prompt || "任务").slice(0, 24)) + "</b><span>" + esc(trig) + " · " + on + next + ' <button class="mini" data-crontoggle="' + esc(String(id)) + '" data-on="' + (j.enabled === false ? "0" : "1") + '">' + (j.enabled === false ? "启用" : "停用") + '</button><button class="mini" data-cronrun="' + esc(String(id)) + '">立即跑</button><button class="mini" data-crondel="' + esc(String(id)) + '">删除</button></span></div>';
   }).join("");
   box.querySelectorAll("[data-crondel]").forEach((el) => {
     el.onclick = async () => {
       const r2 = await api.cronRemove(el.dataset.crondel);
       toast(r2 && r2.ok ? "已删除" : "删除失败");
+      loadCron();
+    };
+  });
+  box.querySelectorAll("[data-crontoggle]").forEach((el) => {
+    el.onclick = async () => {
+      const enable = el.dataset.on !== "1";
+      const r2 = await api.cronSetEnabled({ id: el.dataset.crontoggle, enabled: enable });
+      toast(r2 && r2.ok ? (enable ? "已启用" : "已停用") : "操作失败");
       loadCron();
     };
   });
@@ -1412,14 +1431,27 @@ function bindChat() {
   const exSel = $('#chatExpert');
   if (exSel && !exSel._loaded) {
     exSel._loaded = true;
-    (async () => {
+    loadExpertOptions();
+  }
+  async function loadExpertOptions() {
+    if (!exSel) return;
+    {
       const r = (api.octopExperts ? await api.octopExperts() : (api.experts ? await api.experts() : { ok: false }));
       const items = (r && (r.items || (r.data && r.data.items))) || [];
+      let teamOpts = '';
+      try {
+        const tr = await api.teamsList();
+        const teams = (tr && tr.list) || [];
+        teamOpts = teams.map((t) => `<option value="${esc(String(t.team_id || t.id))}">团 · ${esc(String(t.name || "团队"))}（${(t.member_ids || t.members || []).length} 人）</option>`).join('');
+      } catch {}
+      const keep = exSel.value;
       exSel.innerHTML = '<option value="">默认助理</option>' +
-        items.map((e) => `<option value="${esc(e.id)}">${esc(e.name)}</option>`).join('');
+        items.map((e) => `<option value="${esc(e.id)}">${esc(e.name)}</option>`).join('') + teamOpts;
+      if (keep) exSel.value = keep;
       exSel.onchange = () => { pickedSkills = []; renderSkillCount(); loadSkillPicker(); };
-    })();
+    }
   }
+  window.__reloadExpertOptions = loadExpertOptions;
   const sel = $('#chatProject');
   const cfg = SNAP?.cfg || {};
   sel.innerHTML = (cfg.projects || []).map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('') || '<option value="">（先添加项目）</option>';
@@ -1576,7 +1608,7 @@ function bind() {
     if (members.length < 2) { toast("官方要求至少两名成员"); return; }
     const r = await api.teamsCreate({ name, members });
     toast(r && r.ok ? "已建团" : ("建团失败：" + friendlyError((r && r.error) || "").slice(0, 80)));
-    if (r && r.ok) { if ($("#teamName")) $("#teamName").value = ""; loadTeams(); }
+    if (r && r.ok) { if ($("#teamName")) $("#teamName").value = ""; loadTeams(); if (window.__reloadExpertOptions) window.__reloadExpertOptions(); }
   };
 
   const upBtn = $("#btnUpdate");
