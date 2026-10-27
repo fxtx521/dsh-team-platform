@@ -589,7 +589,7 @@ async function checkUpdate() {
       const pickName = asset ? String(asset).split("/").pop() : ("LiShi-Workbench-" + latest + (plat === "win" ? "-x64.exe" : "-mac-arm64.zip"));
       const base = String(d.baseUrl || cfg.updateBaseUrl || bundled.baseUrl || "").replace(/\/$/, "");
       const url = asset ? (asset.startsWith("http") ? asset : (base ? base + "/" + asset : asset)) : (base ? base + "/" + pickName : "");
-      if (latest && url) {
+      if (latest && url && (asset || !base)) {
         const sz = Number(assetsMap[plat + "_size"] || d.size || 0);
         const sha = String(assetsMap[plat + "_sha256"] || d.sha256 || "");
         return { ok: true, current: cur, latest, hasUpdate: semverGt(latest, cur), url, size: sz, sha256: sha, name: pickName, notes: String(d.notes || "").slice(0, 1200), page: String(d.page || ""), source: "manifest" };
