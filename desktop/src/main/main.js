@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, ipcMain, dialog, Tray, Menu, shell, nativeImage, safeStorage } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Tray, Menu, shell, nativeImage, safeStorage, net } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -453,6 +453,28 @@ handle("channel:add", async (_e, payload) => {
   return { ok: false, error: JSON.stringify((last && last.data) || {}).slice(0, 300) };
 });
 
+// 官方「飞书机器人创建器」：start 起一个流程，poll 拿二维码/凭据，成功后自动落库
+handle("channel:feishuStart", async () => {
+  const cfg = readCfg();
+  if (!cfg.octopAgent) return { ok: false, error: "还没选助理" };
+  const r = await octopFetch("POST", "/api/agents/" + cfg.octopAgent + "/channels/feishu/bot-creator/start", {});
+  return { ok: r.ok, data: r.data, error: r.ok ? "" : JSON.stringify(r.data).slice(0, 200) };
+});
+
+handle("channel:feishuPoll", async () => {
+  const cfg = readCfg();
+  if (!cfg.octopAgent) return { ok: false, error: "还没选助理" };
+  const r = await octopFetch("POST", "/api/agents/" + cfg.octopAgent + "/channels/feishu/bot-creator/poll", {});
+  return { ok: r.ok, data: r.data, error: r.ok ? "" : JSON.stringify(r.data).slice(0, 200) };
+});
+
+handle("channel:feishuStop", async () => {
+  const cfg = readCfg();
+  if (!cfg.octopAgent) return { ok: false, error: "还没选助理" };
+  const r = await octopFetch("POST", "/api/agents/" + cfg.octopAgent + "/channels/feishu/bot-creator/stop", {});
+  return { ok: r.ok };
+});
+
 handle("channel:remove", async (_e, id) => {
   const cfg = readCfg();
   if (!cfg.octopAgent) return { ok: false, error: "还没选助理" };
@@ -471,6 +493,131 @@ handle("session:export", async (_e, { title, content }) => {
     return { ok: true, file };
   } catch (e) { return { ok: false, error: e.message }; }
 });
+
+
+// ── 一键更新（2026-10-27）：查 GitHub Release → 下载安装包 → 退出后自替换并重启 ──
+const REPO = "fxtx521/dsh-team-platform";
+function semverGt(a, b) {
+  const pa = String(a || "0").split("-")[0].split(".").map((x) => parseInt(x, 10) || 0);
+  const pb = String(b || "0").split("-")[0].split(".").map((x) => parseInt(x, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i += 1) {
+    const x = pa[i] || 0, y = pb[i] || 0;
+    if (x > y) return true;
+    if (x < y) return false;
+  }
+  return false;
+}
+
+async function ghGet(url) {
+  try {
+    const res = await net.fetch(url, { headers: { "User-Agent": "lishi-workbench-updater", "Accept": "application/vnd.github+json" } });
+    const body = await res.text();
+    return { status: res.status, body };
+  } catch (e) { return { status: 0, body: String((e && e.message) || e) }; }
+}
+
+async function downloadTo(url, file) {
+  try {
+    const res = await net.fetch(url, { headers: { "User-Agent": "lishi-workbench-updater" } });
+    if (!res.ok) return { ok: false, error: "HTTP " + res.status };
+    const buf = Buffer.from(await res.arrayBuffer());
+    fs.writeFileSync(file, buf);
+    return { ok: true, file, bytes: buf.length };
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+}
+
+handle("app:version", async () => app.getVersion());
+
+async function checkUpdate() {
+  const r = await ghGet("https://api.github.com/repos/" + REPO + "/releases/latest");
+  if (r.status !== 200) return { ok: false, error: "查不到最新版本（" + r.status + "）" };
+  let d = null;
+  try { d = JSON.parse(r.body); } catch { return { ok: false, error: "返回格式不对" }; }
+  const latest = String(d.tag_name || "").replace(/^v/, "");
+  const cur = app.getVersion();
+  const plat = process.platform === "win32" ? "win" : "mac";
+  const assets = Array.isArray(d.assets) ? d.assets : [];
+  const pick = assets.find((a) => {
+    const n = String(a.name || "");
+    if (plat === "win") return /\.exe$/i.test(n);
+    return /\.zip$/i.test(n) && /arm64|universal/i.test(n);
+  }) || assets.find((a) => (plat === "win" ? /\.exe$/i.test(String(a.name)) : /\.zip$/i.test(String(a.name))));
+  const notes = String(d.body || "").slice(0, 1200);
+  return { ok: true, current: cur, latest, hasUpdate: semverGt(latest, cur), url: pick ? pick.browser_download_url : "", size: pick ? pick.size : 0, name: pick ? pick.name : "", notes, page: d.html_url || "" };
+}
+
+handle("update:check", async () => await checkUpdate());
+
+handle("update:download", async (_e, { url, name }) => {
+  if (!url) return { ok: false, error: "没有下载地址" };
+  const dir = path.join(app.getPath("userData"), "updates");
+  try { fs.mkdirSync(dir, { recursive: true }); } catch {}
+  const file = path.join(dir, String(name || "update.bin"));
+  return await downloadTo(url, file);
+  return await new Promise((resolve) => {
+    const go = (u, redirected) => {
+      const proxy = process.env.https_proxy || process.env.HTTPS_PROXY || process.env.http_proxy || "";
+      const opts = { headers: { "User-Agent": "lishi-workbench-updater" } };
+      let req;
+      try {
+        if (proxy && !redirected) {
+          const p = new URL(proxy); const t = new URL(u);
+          req = http.request({ hostname: p.hostname, port: p.port, path: t.href, headers: { ...opts.headers, Host: t.hostname } }, (res) => onRes(res, u));
+        } else {
+          req = https.get(u, opts, (res) => onRes(res, u));
+        }
+      } catch (e) { return resolve({ ok: false, error: e.message }); }
+      req.on("error", (e) => resolve({ ok: false, error: e.message }));
+      req.setTimeout(120000, () => { try { req.destroy(); } catch {} resolve({ ok: false, error: "下载超时" }); });
+      req.end();
+    };
+    const onRes = (res, u) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        return go(res.headers.location, true);
+      }
+      if (res.statusCode !== 200) return resolve({ ok: false, error: "HTTP " + res.statusCode });
+      const out = fs.createWriteStream(file);
+      res.pipe(out);
+      out.on("finish", () => { out.close(() => resolve({ ok: true, file, bytes: fs.statSync(file).size })); });
+      out.on("error", (e) => resolve({ ok: false, error: e.message }));
+    };
+    go(url);
+  });
+});
+
+async function applyUpdate(file) {
+  if (!file || !fs.existsSync(file)) return { ok: false, error: "安装包不存在" };
+  const appPath = process.platform === "darwin" ? path.dirname(path.dirname(path.dirname(app.getPath("exe")))) : "";
+  if (process.platform === "darwin") {
+    const script = "/tmp/lishi-update.sh";
+    const body = [
+      "#!/bin/sh",
+      "sleep 2",
+      "rm -rf \"" + appPath + ".updating\"",
+      "ditto -x -k \"" + file + "\" /tmp/lishi-update-unpack 2>/dev/null || true",
+      "rm -rf \"/tmp/lishi-update-unpack/砺工作台.app\" 2>/dev/null || true",
+      "APP=$(find /tmp/lishi-update-unpack -maxdepth 2 -name \"*.app\" | head -1)",
+      "if [ -n \"$APP\" ]; then cp -R \"$APP\" \"" + appPath + ".updating\"; rm -rf \"" + appPath + "\"; mv \"" + appPath + ".updating\" \"" + appPath + "\"; fi",
+      "rm -rf /tmp/lishi-update-unpack",
+      "/usr/bin/open -a \"" + appPath + "\"",
+      "",
+    ].join("\n");
+    try { fs.writeFileSync(script, body, { mode: 0o755 }); } catch (e) { return { ok: false, error: e.message }; }
+    const { spawn } = require("child_process");
+    const child = spawn("/bin/sh", [script], { detached: true, stdio: "ignore" });
+    child.unref();
+    setTimeout(() => { try { app.quit(); } catch {} }, 300);
+    return { ok: true, mode: "mac" };
+  }
+  // Windows：静默安装到当前目录后自动拉起由安装器负责
+  const { spawn } = require("child_process");
+  const child = spawn(file, ["/S"], { detached: true, stdio: "ignore" });
+  child.unref();
+  setTimeout(() => { try { app.quit(); } catch {} }, 300);
+  return { ok: true, mode: "win" };
+}
+
+handle("update:apply", async (_e, { file }) => await applyUpdate(file));
 
 handle("dialog:pickFiles", async () => {
   const r = await dialog.showOpenDialog(win, {
@@ -1485,7 +1632,51 @@ async function repairAllAgentModels() {
   }
 }
 
-async function octopChat({ text, sessionId, agentId, skills, kbIds }) {
+// 让云端助理重新加载 MCP（本地客户端重启后，旧连接会残留 → 每轮报 mcp load failed）
+async function reloadAgent(agentId) {
+  if (!agentId) return false;
+  for (const ep of ["/reload", "/start"]) {
+    const r = await octopFetch("POST", "/api/agents/" + encodeURIComponent(agentId) + ep, {});
+    if (r.ok) { log("已让云端助理重新加载 MCP（" + ep + "）agent=" + agentId); return true; }
+  }
+  log("助理重载失败 agent=" + agentId);
+  return false;
+}
+
+// 先让云端探测一次本地 MCP，探通了再让它重载助理；探不通就别重载（会把云端状态带坏，
+// 之后每轮都报 mcp load failed，只能重启 Octop 服务才好——2026-10-27 实测）
+async function probeLocalMcp() {
+  try {
+    const r = await octopFetch("POST", "/api/connectors/custom-mcp/test", { name: "local_workbench" });
+    return !!(r.ok && r.data && r.data.ok);
+  } catch { return false; }
+}
+
+async function refreshAgentMcp(agentId, reason) {
+  const cfg = readCfg();
+  const aid = agentId || cfg.octopAgent;
+  if (!aid) return false;
+  if (!(await probeLocalMcp())) {
+    log("本地 MCP 探测未通过，暂不让云端重载助理（" + (reason || "") + "）");
+    return false;
+  }
+  return await reloadAgent(aid);
+}
+
+async function octopChat(opts) {
+  const r = await octopChatOnce(opts);
+  if (r && !r.ok && /mcp load failed/i.test(String(r.error || ""))) {
+    log("检测到 mcp load failed，探测本地 MCP 后重试一次");
+    const cfg = readCfg();
+    const aid = opts && opts.agentId ? ((cfg.expertAgents || {})[opts.agentId] || opts.agentId) : cfg.octopAgent;
+    await refreshAgentMcp(aid || cfg.octopAgent, "chat retry");
+    await new Promise((done) => setTimeout(done, 1500));
+    return await octopChatOnce(opts);
+  }
+  return r;
+}
+
+async function octopChatOnce({ text, sessionId, agentId, skills, kbIds }) {
   const cfg = readCfg();
   const tk = cfg.octopToken;
   if (!tk) return { ok: false, error: "未登录 Octop" };
@@ -1667,6 +1858,20 @@ app.whenReady().then(() => {
   setTimeout(async () => { try { await repairExpertAgents(); } catch (e) { log('修复专家身份失败: ' + e.message); } }, 8000);
   setTimeout(startPoller, 2500);
   setTimeout(() => { try { startMcpTunnel(); } catch (e) { log('隧道启动异常: ' + e.message); } }, 6000);
+  setTimeout(async () => { try { await refreshAgentMcp(readCfg().octopAgent, 'startup'); } catch (e) { log('启动重载助理失败: ' + e.message); } }, 12000);
+  setTimeout(async () => {
+    try {
+      const r = await checkUpdate();
+      if (r && r.ok) log('更新检查: 当前 ' + r.current + ' / 最新 ' + r.latest + (r.hasUpdate ? '（有新版）' : '（已最新）'));
+      // 端到端自测钩子（仅当显式设置环境变量时执行，正常启动不会触发）
+      if (process.env.LISHI_UPDATE_SELFTEST === '1' && r && r.ok && r.hasUpdate && r.url) {
+        log('自测: 开始下载 ' + r.name + ' (' + Math.round((r.size || 0) / 1048576) + 'MB)');
+        const d = await downloadTo(r.url, path.join(app.getPath('userData'), 'updates', String(r.name || 'update.zip')));
+        log('自测: 下载结果 ' + JSON.stringify({ ok: d.ok, bytes: d.bytes, error: d.error }));
+        if (d.ok) { log('自测: 准备替换并重启'); await applyUpdate(d.file); }
+      }
+    } catch (e) { log('更新检查失败: ' + e.message); }
+  }, 20000);
   try { startMcpServer(); } catch (e) { log('MCP 启动异常: ' + e.message); }
   app.on('activate', () => { if (!win) createWindow(); else win.show(); });
 });

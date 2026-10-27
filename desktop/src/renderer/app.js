@@ -1372,6 +1372,63 @@ function bind() {
     }).catch(() => {});
   }
   const chR = $("#btnChannelRefresh"); if (chR) chR.onclick = loadChannels;
+  const upBtn = $("#btnUpdate");
+  if (upBtn) upBtn.onclick = async () => {
+    const tip = $("#updateTip");
+    const show = (t) => { if (tip) tip.textContent = t; };
+    upBtn.disabled = true;
+    show("正在检查…");
+    const r = await api.updateCheck();
+    if (!r || !r.ok) { upBtn.disabled = false; show("检查失败：" + ((r && r.error) || "网络问题")); return; }
+    if (!r.hasUpdate) { upBtn.disabled = false; show("已经是最新版 v" + r.current); return; }
+    show("发现新版本 v" + r.latest + "，正在下载（约 " + Math.round((r.size || 0) / 1048576) + "MB）…");
+    const d = await api.updateDownload({ url: r.url, name: r.name });
+    if (!d || !d.ok) { upBtn.disabled = false; show("下载失败：" + ((d && d.error) || "")); return; }
+    show("下载完成，正在安装并重启…");
+    await api.updateApply({ file: d.file });
+  };
+  if ($("#curVer")) api.appVersion().then((v) => { $("#curVer").textContent = v || "0"; }).catch(() => {});
+
+  const fa = $("#btnFeishuAuto");
+  if (fa) fa.onclick = async () => {
+    const tip = $("#channelAuto");
+    const t0 = Date.now();
+    fa.disabled = true;
+    if (tip) tip.textContent = "正在启动官方机器人创建流程…";
+    const st = await api.channelFeishuStart();
+    if (!st || !st.ok) {
+      fa.disabled = false;
+      if (tip) tip.textContent = "启动失败：" + ((st && st.error) || "未知原因");
+      return;
+    }
+    const poll = async () => {
+      if (Date.now() - t0 > 180000) {
+        await api.channelFeishuStop();
+        fa.disabled = false;
+        if (tip) tip.textContent = "三分钟没完成，已停止；可以改用手填 App ID";
+        return;
+      }
+      const p = await api.channelFeishuPoll();
+      const d = (p && p.data) || {};
+      if (d.qr_url && tip) tip.innerHTML = "请用飞书扫码授权：<a href=\"" + d.qr_url + "\" target=\"_blank\">打开二维码</a>";
+      if (d.status === "succeeded" || (d.app_id && d.app_secret)) {
+        if (tip) tip.textContent = "创建成功，正在绑定到云端…";
+        const r = await api.channelAdd({ type: "feishu", config: { app_id: d.app_id, app_secret: d.app_secret } });
+        fa.disabled = false;
+        if (tip) tip.textContent = r && r.ok ? "已创建并绑定" : ("绑定失败：" + ((r && r.error) || ""));
+        loadChannels();
+        return;
+      }
+      if (d.status === "failed") {
+        fa.disabled = false;
+        if (tip) tip.textContent = "创建失败，可改用手填 App ID";
+        return;
+      }
+      setTimeout(() => { setTimeout(poll, 0); }, 2000);
+    };
+    setTimeout(poll, 0);
+  };
+
   const chA = $("#btnChannelAdd");
   if (chA) chA.onclick = async () => {
     const type = ($("#chType") || {}).value || "feishu";

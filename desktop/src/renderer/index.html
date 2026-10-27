@@ -235,7 +235,9 @@
           <input id="chAppId" class="inp" placeholder="App ID" style="max-width:220px" />
           <input id="chSecret" class="inp" placeholder="App Secret" style="max-width:260px" type="password" />
           <button class="btn primary" id="btnChannelAdd">保存并启用</button>
+          <button class="btn ghost" id="btnFeishuAuto" title="用官方机器人创建器扫码建机器人">一键创建飞书机器人</button>
         </div>
+        <div id="channelAuto" class="sub" style="margin:6px 0"></div>
         <div id="channelList" class="list"><div class="sub">加载中…</div></div>
       </div>
 
@@ -275,6 +277,10 @@
         <label class="switch"><input type="checkbox" id="mcpOn" /><span>启用本地 MCP 服务</span></label>
       </div>
       </details>
+      <div class="card">
+        <div class="card-h"><div><h3>版本与更新</h3><p class="sub">点一下检查，有新版本会自己下载替换，不用再去找安装包</p></div><button class="btn primary" id="btnUpdate">检查更新</button></div>
+        <div id="updateTip" class="sub">当前版本 v<span id="curVer">-</span></div>
+      </div>
       <div class="card">
         <div class="card-h"><h3>关于</h3></div>
         <p class="sub">砺 · 工作台 v<span id="aboutVer">0.1.0</span> · 平台 <span id="aboutPlat">-</span></p>

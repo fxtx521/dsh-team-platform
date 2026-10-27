@@ -75,6 +75,13 @@ contextBridge.exposeInMainWorld('wb', {
   channelList: () => ipcRenderer.invoke("channel:list"),
   channelAdd: (payload) => ipcRenderer.invoke("channel:add", payload),
   channelRemove: (id) => ipcRenderer.invoke("channel:remove", id),
+  appVersion: () => ipcRenderer.invoke("app:version"),
+  updateCheck: () => ipcRenderer.invoke("update:check"),
+  updateDownload: (p) => ipcRenderer.invoke("update:download", p),
+  updateApply: (p) => ipcRenderer.invoke("update:apply", p),
+  channelFeishuStart: () => ipcRenderer.invoke("channel:feishuStart"),
+  channelFeishuPoll: () => ipcRenderer.invoke("channel:feishuPoll"),
+  channelFeishuStop: () => ipcRenderer.invoke("channel:feishuStop"),
   filePathOf: (f) => {
     try {
       const { webUtils } = require('electron');
