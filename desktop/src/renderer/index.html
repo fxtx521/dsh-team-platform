@@ -217,6 +217,14 @@
         <div class="card-h"><div><h3>技能库</h3><p class="sub" id="skillHint">跟随当前助理的技能</p></div><button class="btn ghost" id="btnSyncSkills">刷新</button></div>
         <div id="skillList" class="grid2" style="padding:4px 0"></div>
       </div>
+      <div class="card">
+        <div class="card-h"><div><h3>技能市场</h3><p class="sub">官方 SkillHub，搜到就能装，装完在当前助理里可用</p></div></div>
+        <div style="display:flex;gap:8px;margin-bottom:10px">
+          <input id="hubQuery" class="inp" placeholder="搜技能，例如 Excel、周报" style="max-width:280px" />
+          <button class="btn primary" id="btnHubSearch">搜索</button>
+        </div>
+        <div id="hubList" class="list"><div class="sub">输入关键词搜一下</div></div>
+      </div>
     </section>
 
     <section class="view" id="view-console">
@@ -305,6 +313,10 @@
       <div class="card">
         <div class="card-h"><div><h3>版本与更新</h3><p class="sub">点一下检查，有新版本会自己下载替换，不用再去找安装包</p></div><button class="btn primary" id="btnUpdate">检查更新</button></div>
         <div id="updateTip" class="sub">当前版本 v<span id="curVer">-</span></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><div><h3>模型供应商</h3><p class="sub">来自云端 Octop；只显示密钥掩码，切换后新对话生效</p></div><button class="btn ghost" id="btnProvRefresh">刷新</button></div>
+        <div id="provList" class="list"><div class="sub">加载中…</div></div>
       </div>
       <div class="card">
         <div class="card-h"><h3>关于</h3></div>

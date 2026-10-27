@@ -277,7 +277,7 @@ function go(view) {
   if (view === 'knowledge') { loadKnowledge(); loadKbDocs(); }
   if (view === 'expertspage') { loadExpertsPage(); loadTeams(); }
   if (view === 'skills') loadSkills();
-  if (view === 'settings') fillSettings();
+  if (view === 'settings') { fillSettings(); loadProviders(); }
 }
 function renderConn() {
   const pill = $('#connPill'); const st = SNAP?.state || {};
@@ -864,6 +864,55 @@ async function loadMemory() {
   }
 }
 
+
+// ── 技能市场 ─────────────────────────────────────────────
+async function searchHub() {
+  const box = $("#hubList"); if (!box) return;
+  const q = (($("#hubQuery") || {}).value || "").trim();
+  box.innerHTML = '<div class="sub">搜索中…</div>';
+  const r = await api.skillhubSearch(q);
+  if (!r || !r.ok) { box.innerHTML = '<div class="sub">' + esc((r && r.error) || "搜索失败") + "</div>"; return; }
+  const list = r.list || [];
+  if (!list.length) { box.innerHTML = '<div class="sub">没搜到，换个关键词</div>'; return; }
+  box.innerHTML = list.slice(0, 30).map((s) => {
+    const slug = s.slug || s.name || "";
+    const desc = String(s.description || "").slice(0, 60);
+    return '<div class="row"><b>' + esc(String(s.displayName || s.display_name || s.name || slug)) + "</b><span>" + esc(desc) + ' <button class="mini" data-hubinstall="' + esc(String(slug)) + '">安装</button></span></div>';
+  }).join("");
+  box.querySelectorAll("[data-hubinstall]").forEach((el) => {
+    el.onclick = () => {
+      showConfirm("安装技能", "会把技能装到云端并共享给当前助理。", async () => {
+        el.disabled = true;
+        const r2 = await api.skillhubInstall({ slug: el.dataset.hubinstall });
+        toast(r2 && r2.ok ? "已安装" : ("安装失败：" + ((r2 && r2.error) || "").slice(0, 80)));
+        if (r2 && r2.ok) loadSkills();
+      });
+    };
+  });
+}
+
+// ── 模型供应商 ───────────────────────────────────────────
+async function loadProviders() {
+  const box = $("#provList"); if (!box) return;
+  const r = await api.providersList();
+  if (!r || !r.ok) { box.innerHTML = '<div class="sub">' + esc((r && r.error) || "取不到供应商") + "</div>"; return; }
+  const active = await api.providersActive();
+  const cur = (active && active.data) || {};
+  const list = r.list || [];
+  if (!list.length) { box.innerHTML = '<div class="sub">云端没有配置供应商</div>'; return; }
+  box.innerHTML = list.map((p) => {
+    const opts = (p.models || []).map((m) => '<option value="' + esc(p.name + "|" + m.id) + '"' + (cur.provider_name === p.name && cur.model === m.id ? " selected" : "") + ">" + esc(m.name) + "</option>").join("");
+    return '<div class="row"><b>' + esc(p.name) + " · " + esc(p.kind || "") + "</b><span>" + esc(p.keyMasked || "未填密钥") + ' <select class="inp" style="max-width:220px" data-prov="' + esc(p.name) + '">' + opts + '</select></span></div>';
+  }).join("");
+  box.querySelectorAll("[data-prov]").forEach((sel) => {
+    sel.onchange = async () => {
+      const parts = String(sel.value).split("|");
+      const rr = await api.providersSetActive({ providerName: parts[0], model: parts.slice(1).join("|") });
+      toast(rr && rr.ok ? "已切换模型" : "切换失败");
+    };
+  });
+}
+
 function friendlyError(raw) {
   const s = String(raw || "");
   if (!s) return "出了点问题，再试一次";
@@ -944,11 +993,21 @@ async function loadKnowledge() {
 async function loadKbDocs() {
   const box = $('#kbDocs');
   if (!curKbId) { box.innerHTML = '<div class="sub">选一个知识库查看文档</div>'; return; }
-  const r = await api.octopKbDocs({ kbId: curKbId });
-  const items = (r && r.items) || [];
+  const r = await api.kbListDocs(curKbId);
+  const items = (r && r.list) || [];
   const title = $("#kbDocsTitle");
   if (title) title.textContent = "文档（" + items.length + "）";
-  box.innerHTML = items.map((d) => '<div class="item"><div class="t"><b>' + esc(d.name) + '</b><span>' + esc(d.status) + " · " + Math.round((d.size || 0) / 1024) + "KB · 分片 " + (d.chunks || 0) + "</span></div></div>").join("") || '<div class="sub">还没有文档，点「上传本地文件」</div>';
+  if (!r || !r.ok) { box.innerHTML = '<div class="sub">' + esc((r && r.error) || "取不到文档") + "</div>"; return; }
+  box.innerHTML = items.map((d) => '<div class="row"><b>' + esc(d.filename || d.path || "文档") + "</b><span>" + esc(String(d.status || "")) + " · " + Math.round((d.byte_size || 0) / 1024) + "KB · 分片 " + (d.chunk_count || 0) + ' <button class="mini" data-kbdel="' + esc(String(d.id)) + '">删除</button></span></div>').join("") || '<div class="sub">还没有文档，点「上传本地文件」</div>';
+  box.querySelectorAll("[data-kbdel]").forEach((el) => {
+    el.onclick = () => {
+      showConfirm('删除文档', '会从知识库里移除这份文档，云端索引也会删掉。', async () => {
+        const r2 = await api.kbDeleteDoc({ kbId: curKbId, docId: el.dataset.kbdel });
+        toast(r2 && r2.ok ? "已删除" : "删除失败");
+        loadKbDocs();
+      });
+    };
+  });
 }
 
 // ── 专家广场页 ───────────────────────────
@@ -1493,6 +1552,10 @@ function bind() {
   const tR = $("#btnTeamRefresh"); if (tR) tR.onclick = loadTeams;
   const cR = $("#btnCronRefresh"); if (cR) cR.onclick = loadCron;
   const mR = $("#btnMemRefresh"); if (mR) mR.onclick = loadMemory;
+  const hS = $("#btnHubSearch"); if (hS) hS.onclick = searchHub;
+  const hQ = $("#hubQuery"); if (hQ) hQ.onkeydown = (e) => { if (e.key === "Enter") searchHub(); };
+  const pR = $("#btnProvRefresh"); if (pR) pR.onclick = loadProviders;
+
 
   const cC = $("#btnCronCreate");
   if (cC) cC.onclick = async () => {
@@ -1524,7 +1587,7 @@ function bind() {
     show("正在检查…");
     const r = await api.updateCheck();
     if (!r || !r.ok) { upBtn.disabled = false; show("检查失败：" + ((r && r.error) || "网络问题")); return; }
-    if (!r.hasUpdate) { upBtn.disabled = false; show("已经是最新版 v" + r.current); return; }
+    if (!r.hasUpdate) { upBtn.disabled = false; show(r.ahead ? ("本地 v" + r.current + " 比更新源 v" + r.latest + " 新，无需更新") : ("已经是最新版 v" + r.current)); return; }
     show("发现新版本 v" + r.latest + "，正在下载（约 " + Math.round((r.size || 0) / 1048576) + "MB）…");
     const d = await api.updateDownload({ url: r.url, name: r.name, size: r.size, sha256: r.sha256 });
     if (!d || !d.ok) { upBtn.disabled = false; show("下载失败：" + ((d && d.error) || "")); return; }

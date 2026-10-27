@@ -590,9 +590,10 @@ async function checkUpdate() {
       const base = String(d.baseUrl || cfg.updateBaseUrl || bundled.baseUrl || "").replace(/\/$/, "");
       const url = asset ? (asset.startsWith("http") ? asset : (base ? base + "/" + asset : asset)) : (base ? base + "/" + pickName : "");
       if (latest && url && (asset || !base)) {
+        const cmpNote = semverGt(cur, latest) ? "本地版本高于更新源" : "";
         const sz = Number(assetsMap[plat + "_size"] || d.size || 0);
         const sha = String(assetsMap[plat + "_sha256"] || d.sha256 || "");
-        return { ok: true, current: cur, latest, hasUpdate: semverGt(latest, cur), url, size: sz, sha256: sha, name: pickName, notes: String(d.notes || "").slice(0, 1200), page: String(d.page || ""), source: "manifest" };
+        return { ok: true, current: cur, latest, hasUpdate: semverGt(latest, cur), ahead: semverGt(cur, latest), note: cmpNote, url, size: sz, sha256: sha, name: pickName, notes: String(d.notes || "").slice(0, 1200), page: String(d.page || ""), source: "manifest" };
       }
       log("自建清单缺少该平台资产或地址，回退 GitHub Release");
     }
@@ -679,6 +680,70 @@ async function applyUpdate(file) {
 }
 
 handle("update:apply", async (_e, { file }) => await applyUpdate(file));
+
+// ── 技能市场（官方 SkillHub）─────────────────────────────
+handle("skillhub:search", async (_e, q) => {
+  const query = String(q || "").trim();
+  const pth = "/api/skills/hub/search" + (query ? "?q=" + encodeURIComponent(query) : "");
+  const r = await octopFetch("GET", pth);
+  const list = (r.ok && Array.isArray(r.data)) ? r.data : ((r.ok && r.data && Array.isArray(r.data.items)) ? r.data.items : []);
+  return { ok: r.ok, list, error: r.ok ? "" : JSON.stringify(r.data).slice(0, 200) };
+});
+
+handle("skillhub:install", async (_e, payload) => {
+  const p = payload || {};
+  const slug = String(p.slug || "").trim();
+  if (!slug) return { ok: false, error: "缺少技能标识" };
+  const aid = readCfg().octopAgent || (await ensureOctopAgent());
+  if (!aid) return { ok: false, error: "没有可用助理" };
+  const r = await octopFetch("POST", "/api/agents/" + aid + "/skills/hub/install", { skill_name: slug, enable: true });
+  audit("skill", "安装技能", slug, r.ok, 0);
+  return { ok: r.ok, data: r.data, error: r.ok ? "" : JSON.stringify(r.data).slice(0, 300) };
+});
+
+handle("skillpkg:list", async () => {
+  const r = await octopFetch("GET", "/api/skill-packages");
+  return { ok: r.ok, list: (r.ok && Array.isArray(r.data)) ? r.data : [], error: r.ok ? "" : JSON.stringify(r.data).slice(0, 200) };
+});
+
+// ── 知识库文档管理（官方 knowledge-bases/Documents）────────
+handle("kb:listDocs", async (_e, kbId) => {
+  if (!kbId) return { ok: false, list: [], error: "没选知识库" };
+  const r = await octopFetch("GET", "/api/knowledge-bases/" + encodeURIComponent(kbId) + "/documents");
+  return { ok: r.ok, list: (r.ok && Array.isArray(r.data)) ? r.data : [], error: r.ok ? "" : JSON.stringify(r.data).slice(0, 200) };
+});
+
+handle("kb:deleteDoc", async (_e, { kbId, docId }) => {
+  if (!kbId || !docId) return { ok: false, error: "缺少参数" };
+  const r = await octopFetch("DELETE", "/api/knowledge-bases/" + encodeURIComponent(kbId) + "/documents/" + encodeURIComponent(docId));
+  audit("kb", "删除知识库文档", String(docId), r.ok, 0);
+  return { ok: r.ok, error: r.ok ? "" : JSON.stringify(r.data).slice(0, 200) };
+});
+
+// ── 模型供应商（官方 providers）────────────────────────────
+handle("providers:list", async () => {
+  const r = await octopFetch("GET", "/api/providers");
+  const list = (r.ok && Array.isArray(r.data)) ? r.data : [];
+  // 密钥只回传掩码，绝不下发原文
+  const safe = list.map((p) => ({
+    id: p.id, name: p.name, kind: p.kind,
+    keyMasked: p.api_key ? ("****" + String(p.api_key).slice(-4)) : "",
+    models: (p.models || []).map((m) => ({ id: m.id, name: m.name || m.id, input: m.input || [] })),
+  }));
+  return { ok: r.ok, list: safe, error: r.ok ? "" : JSON.stringify(r.data).slice(0, 200) };
+});
+
+handle("providers:active", async () => {
+  const r = await octopFetch("GET", "/api/providers/active-model");
+  return { ok: r.ok, data: r.data, error: r.ok ? "" : JSON.stringify(r.data).slice(0, 200) };
+});
+
+handle("providers:setActive", async (_e, { providerName, model }) => {
+  if (!providerName || !model) return { ok: false, error: "缺少参数" };
+  const r = await octopFetch("PUT", "/api/providers/active-model", { provider_name: providerName, model });
+  audit("model", "切换默认模型", providerName + "/" + model, r.ok, 0);
+  return { ok: r.ok, error: r.ok ? "" : JSON.stringify(r.data).slice(0, 200) };
+});
 
 // ── 云端记忆（官方 agents/{id}/memory）───────────────────
 async function memAgentId() {
