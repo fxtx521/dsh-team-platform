@@ -40,6 +40,17 @@ const api = window.wb || {
   guardConfig: async () => ({ enabled: true, block: [], warn: [] }),
   guardSave: async () => ({ ok: true }),
   onNeedLogin: () => {},
+  cronList: async () => ({ ok: true, list: [] }),
+  cronCreate: async () => ({ ok: false, error: "预览模式" }),
+  cronRemove: async () => ({ ok: false, error: "预览模式" }),
+  cronRunNow: async () => ({ ok: false, error: "预览模式" }),
+  memoryAtoms: async () => ({ ok: true, list: [] }),
+  memoryCandidates: async () => ({ ok: true, list: [] }),
+  memoryDecide: async () => ({ ok: false, error: "预览模式" }),
+  teamsList: async () => ({ ok: true, list: [] }),
+  teamsMembers: async () => [],
+  teamsCreate: async () => ({ ok: false, error: "预览模式" }),
+  teamsRemove: async () => ({ ok: false, error: "预览模式" }),
   updateCheck: async () => ({ ok: true, current: "preview", latest: "preview", hasUpdate: false }),
   updateDownload: async () => ({ ok: false, error: "预览模式不支持" }),
   updateApply: async () => ({ ok: false, error: "预览模式不支持" }),
@@ -259,12 +270,12 @@ function go(view) {
   if (view === 'usage') loadUsage();
   if (view === 'audit') loadAudit();
   if (view === 'chat') bindChat();
-  if (view === 'tasks') loadTasks();
-  if (view === 'experiences') loadExperiences();
+  if (view === 'tasks') { loadTasks(); loadCron(); }
+  if (view === 'experiences') { loadExperiences(); loadMemory(); }
   if (view === 'capabilities') loadCapabilities();
   if (view === 'home') renderHomeExperts();
   if (view === 'knowledge') { loadKnowledge(); loadKbDocs(); }
-  if (view === 'expertspage') loadExpertsPage();
+  if (view === 'expertspage') { loadExpertsPage(); loadTeams(); }
   if (view === 'skills') loadSkills();
   if (view === 'settings') fillSettings();
 }
@@ -753,6 +764,104 @@ async function loadChannels() {
       loadChannels();
     };
   });
+}
+
+
+// ── 专家团（官方 /api/teams）─────────────────────────────
+async function loadTeams() {
+  const box = $("#teamList"); if (!box) return;
+  const sel = $("#teamMembers");
+  if (sel && !sel.options.length) {
+    const members = await api.teamsMembers();
+    sel.innerHTML = (members || []).map((a) => '<option value="' + esc(a.id) + '">' + esc(a.name) + "</option>").join("");
+    sel.size = Math.min(4, Math.max(2, (members || []).length));
+  }
+  const r = await api.teamsList();
+  if (!r || !r.ok) { box.innerHTML = '<div class="sub">' + esc((r && r.error) || "取不到团队") + "</div>"; return; }
+  const list = r.list || [];
+  if (!list.length) { box.innerHTML = '<div class="sub">还没有专家团，选两个人建一个试试</div>'; return; }
+  box.innerHTML = list.map((t) => {
+    const id = t.id || t.team_id || "";
+    const members = t.member_ids || t.members || t.agent_ids || [];
+    return '<div class="row"><b>' + esc(String(t.name || "未命名团")) + "</b><span>" + members.length + " 人 · " + esc(String(t.status || "可用")) + ' <button class="mini" data-teamdel="' + esc(String(id)) + '">解散</button></span></div>';
+  }).join("");
+  box.querySelectorAll("[data-teamdel]").forEach((el) => {
+    el.onclick = () => {
+      showConfirm('解散专家团', '解散后成员之间不再协作，配置不能恢复。', async () => {
+        const r2 = await api.teamsRemove(el.dataset.teamdel);
+        toast(r2 && r2.ok ? "已解散" : "解散失败");
+        loadTeams();
+      });
+    };
+  });
+}
+
+
+// ── 定时任务（官方 cron）──────────────────────────────────
+async function loadCron() {
+  const box = $("#cronList"); if (!box) return;
+  const r = await api.cronList();
+  if (!r || !r.ok) { box.innerHTML = '<div class="sub">' + esc((r && r.error) || "取不到定时任务") + "</div>"; return; }
+  const list = r.list || [];
+  if (!list.length) { box.innerHTML = '<div class="sub">还没有定时任务</div>'; return; }
+  box.innerHTML = list.map((j) => {
+    const id = j.id || j.job_id || "";
+    const trig = String(j.trigger || "").replace(/^cron:/, "");
+    const on = j.enabled === false ? "已停用" : "启用中";
+    return '<div class="row"><b>' + esc(String(j.name || j.prompt || "任务").slice(0, 24)) + "</b><span>" + esc(trig) + " · " + on + ' <button class="mini" data-cronrun="' + esc(String(id)) + '">立即跑</button><button class="mini" data-crondel="' + esc(String(id)) + '">删除</button></span></div>';
+  }).join("");
+  box.querySelectorAll("[data-crondel]").forEach((el) => {
+    el.onclick = async () => {
+      const r2 = await api.cronRemove(el.dataset.crondel);
+      toast(r2 && r2.ok ? "已删除" : "删除失败");
+      loadCron();
+    };
+  });
+  box.querySelectorAll("[data-cronrun]").forEach((el) => {
+    el.onclick = async () => {
+      const r2 = await api.cronRunNow(el.dataset.cronrun);
+      toast(r2 && r2.ok ? "已触发，结果稍后到" : "触发失败");
+    };
+  });
+}
+
+
+function fmtLocal(v) {
+  if (!v) return "";
+  try { return new Date(v).toLocaleString("zh-CN", { hour12: false }); } catch { return String(v).slice(0, 19).replace("T", " "); }
+}
+
+// ── 云端记忆（官方 memory）────────────────────────────────
+async function loadMemory() {
+  const aBox = $("#memAtoms");
+  const cBox = $("#memCandidates");
+  if (aBox) {
+    const r = await api.memoryAtoms({ limit: 30 });
+    const list = (r && r.list) || [];
+    aBox.innerHTML = !r || !r.ok
+      ? '<div class="sub">' + esc((r && r.error) || "取不到云端记忆") + "</div>"
+      : (list.length ? list.map((m) => '<div class="row"><b>' + esc(String(m.assertion || "").slice(0, 60)) + "</b><span>" + esc(fmtLocal(m.occurred_at)) + "</span></div>").join("") : '<div class="sub">云端还没有沉淀的记忆</div>');
+  }
+  if (cBox) {
+    const r = await api.memoryCandidates({ limit: 30, status: "pending" });
+    const list = (r && r.list) || [];
+    cBox.innerHTML = !r || !r.ok
+      ? '<div class="sub">' + esc((r && r.error) || "取不到候选") + "</div>"
+      : (list.length ? list.map((m) => '<div class="row"><b>' + esc(String(m.assertion || m.title || "").slice(0, 60)) + '</b><span><button class="mini" data-memok="' + esc(m.id) + '">采纳</button><button class="mini" data-memno="' + esc(m.id) + '">忽略</button></span></div>').join("") : '<div class="sub">没有待定候选</div>');
+    cBox.querySelectorAll("[data-memok]").forEach((el) => {
+      el.onclick = () => {
+        showConfirm('采纳这条记忆', '采纳后会进入云端长期记忆，之后对话会用到它。', async () => {
+          el.disabled = true;
+          const r2 = await api.memoryDecide({ id: el.dataset.memok, action: "promote" });
+          toast(r2 && r2.ok ? "已采纳" : "操作失败");
+          loadMemory();
+        });
+      };
+    });
+    cBox.querySelectorAll("[data-memno]").forEach((el) => {
+      el.onclick = async () => { const r2 = await api.memoryDecide({ id: el.dataset.memno, action: "reject" }); toast(r2 && r2.ok ? "已忽略" : "操作失败"); loadMemory(); };
+    });
+  }
 }
 
 function friendlyError(raw) {
@@ -1381,6 +1490,32 @@ function bind() {
     }).catch(() => {});
   }
   const chR = $("#btnChannelRefresh"); if (chR) chR.onclick = loadChannels;
+  const tR = $("#btnTeamRefresh"); if (tR) tR.onclick = loadTeams;
+  const cR = $("#btnCronRefresh"); if (cR) cR.onclick = loadCron;
+  const mR = $("#btnMemRefresh"); if (mR) mR.onclick = loadMemory;
+
+  const cC = $("#btnCronCreate");
+  if (cC) cC.onclick = async () => {
+    const trigger = (($("#cronTrigger") || {}).value || "").trim();
+    const prompt = (($("#cronPrompt") || {}).value || "").trim();
+    if (!trigger || !prompt) { toast("触发规则和任务内容都要填"); return; }
+    const r = await api.cronCreate({ trigger, prompt });
+    toast(r && r.ok ? "已创建" : ("创建失败：" + friendlyError((r && r.error) || "").slice(0, 90)));
+    if (r && r.ok) { if ($("#cronPrompt")) $("#cronPrompt").value = ""; loadCron(); }
+  };
+
+  const tC = $("#btnTeamCreate");
+  if (tC) tC.onclick = async () => {
+    const name = (($("#teamName") || {}).value || "").trim();
+    const sel = $("#teamMembers");
+    const members = sel ? Array.prototype.slice.call(sel.selectedOptions || []).map((o) => o.value) : [];
+    if (!name) { toast("先填团队名"); return; }
+    if (members.length < 2) { toast("官方要求至少两名成员"); return; }
+    const r = await api.teamsCreate({ name, members });
+    toast(r && r.ok ? "已建团" : ("建团失败：" + friendlyError((r && r.error) || "").slice(0, 80)));
+    if (r && r.ok) { if ($("#teamName")) $("#teamName").value = ""; loadTeams(); }
+  };
+
   const upBtn = $("#btnUpdate");
   if (upBtn) upBtn.onclick = async () => {
     const tip = $("#updateTip");

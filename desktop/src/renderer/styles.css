@@ -340,3 +340,13 @@ body.dark .typing{background:#1b1f28;color:#cfd5df}
 body.dark h1,body.dark h2,body.dark h3,body.dark b,body.dark strong{color:#f1f3f6}
 body.dark ::-webkit-scrollbar-thumb{background:#2b3240}
 
+
+/* ── 通用列表行与迷你按钮（2026-10-27 补：审计/渠道/团队/定时任务/记忆共用）── */
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;background:var(--panel)}
+.row b{font-weight:600;font-size:13px}
+.row span{color:var(--muted);font-size:12.5px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.mini{font-size:12px;padding:4px 9px;border-radius:8px;border:1px solid var(--line);background:#f7f8fb;color:#374151;cursor:pointer}
+.mini:hover{background:#eef1f6}
+body.dark .row{background:#1b1f28;border-color:#262b35}
+body.dark .mini{background:#222834;color:#d7dbe3;border-color:#2b3240}
+

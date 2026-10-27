@@ -680,6 +680,114 @@ async function applyUpdate(file) {
 
 handle("update:apply", async (_e, { file }) => await applyUpdate(file));
 
+// ── 云端记忆（官方 agents/{id}/memory）───────────────────
+async function memAgentId() {
+  const cfg = readCfg();
+  return cfg.octopAgent || (await ensureOctopAgent());
+}
+
+handle("memory:atoms", async (_e, p) => {
+  const aid = await memAgentId();
+  if (!aid) return { ok: false, list: [], error: "没有可用助理" };
+  const lim = Math.min(200, Math.max(1, Number((p && p.limit) || 50) || 50));
+  const body = { limit: lim };
+  const r = await octopFetch("POST", "/api/agents/" + aid + "/memory/atoms/list", body);
+  const items = (r.ok && r.data && Array.isArray(r.data.items)) ? r.data.items : [];
+  return { ok: r.ok, list: items, error: r.ok ? "" : JSON.stringify(r.data).slice(0, 200) };
+});
+
+handle("memory:candidates", async (_e, p) => {
+  const aid = await memAgentId();
+  if (!aid) return { ok: false, list: [], error: "没有可用助理" };
+  const lim = Math.min(200, Math.max(1, Number((p && p.limit) || 50) || 50));
+  const body = { limit: lim };
+  if (p && (p.status === "pending" || p.status === "promoted" || p.status === "rejected")) body.status = String(p.status);
+  const r = await octopFetch("POST", "/api/agents/" + aid + "/memory/candidates/list", body);
+  const items = (r.ok && r.data && Array.isArray(r.data.items)) ? r.data.items : [];
+  return { ok: r.ok, list: items, error: r.ok ? "" : JSON.stringify(r.data).slice(0, 200) };
+});
+
+handle("memory:decide", async (_e, payload) => {
+  const p = payload || {};
+  const aid = await memAgentId();
+  if (!aid || !p.id || !p.action) return { ok: false, error: "缺少参数" };
+  if (p.action !== "promote" && p.action !== "reject") return { ok: false, error: "只支持采纳或忽略" };
+  const action = p.action === "promote" ? ":promote" : ":reject";
+  const r = await octopFetch("POST", "/api/agents/" + aid + "/memory/candidates/" + encodeURIComponent(p.id) + action, {});
+  audit("memory", p.action === "promote" ? "采纳候选记忆" : "忽略候选记忆", String(p.id), r.ok, 0);
+  return { ok: r.ok, error: r.ok ? "" : JSON.stringify(r.data).slice(0, 200) };
+});
+
+// ── 定时任务（官方 agents/{id}/cron）─────────────────────
+async function cronAgentId() {
+  const cfg = readCfg();
+  return cfg.octopAgent || (await ensureOctopAgent());
+}
+
+handle("cron:list", async () => {
+  const aid = await cronAgentId();
+  if (!aid) return { ok: false, list: [], error: "没有可用助理" };
+  const r = await octopFetch("GET", "/api/agents/" + aid + "/cron");
+  return { ok: r.ok, list: (r.ok && Array.isArray(r.data)) ? r.data : [], error: r.ok ? "" : JSON.stringify(r.data).slice(0, 200) };
+});
+
+handle("cron:create", async (_e, payload) => {
+  const p = payload || {};
+  const aid = await cronAgentId();
+  if (!aid) return { ok: false, error: "没有可用助理" };
+  const trigger = String(p.trigger || "").trim();
+  const prompt = String(p.prompt || "").trim();
+  if (!trigger || !prompt) return { ok: false, error: "触发规则和任务内容都要填" };
+  const r = await octopFetch("POST", "/api/agents/" + aid + "/cron", { trigger: trigger.startsWith("cron:") ? trigger : "cron:" + trigger, prompt });
+  audit("cron", "新建定时任务", trigger + " | " + prompt.slice(0, 40), r.ok, 0);
+  return { ok: r.ok, data: r.data, error: r.ok ? "" : JSON.stringify(r.data).slice(0, 300) };
+});
+
+handle("cron:remove", async (_e, id) => {
+  const aid = await cronAgentId();
+  if (!aid || !id) return { ok: false, error: "缺少参数" };
+  const r = await octopFetch("DELETE", "/api/agents/" + aid + "/cron/" + encodeURIComponent(id));
+  audit("cron", "删除定时任务", String(id), r.ok, 0);
+  return { ok: r.ok, error: r.ok ? "" : JSON.stringify(r.data).slice(0, 200) };
+});
+
+handle("cron:runNow", async (_e, id) => {
+  const aid = await cronAgentId();
+  if (!aid || !id) return { ok: false, error: "缺少参数" };
+  const r = await octopFetch("POST", "/api/agents/" + aid + "/cron/" + encodeURIComponent(id) + "/run-now", {});
+  audit("cron", "立即运行定时任务", String(id), r.ok, 0);
+  return { ok: r.ok, error: r.ok ? "" : JSON.stringify(r.data).slice(0, 200) };
+});
+
+// ── 专家团（官方 /api/teams）─────────────────────────────
+handle("teams:list", async () => {
+  const r = await octopFetch("GET", "/api/teams");
+  return { ok: r.ok, list: (r.ok && Array.isArray(r.data)) ? r.data : [], error: r.ok ? "" : JSON.stringify(r.data).slice(0, 200) };
+});
+
+handle("teams:members", async () => {
+  const list = await octopAgents();
+  return (Array.isArray(list) ? list : []).map((a) => ({ id: a.agent_id, name: a.name || a.agent_id }));
+});
+
+handle("teams:create", async (_e, payload) => {
+  const p = payload || {};
+  const name = String(p.name || "").trim();
+  const members = Array.isArray(p.members) ? p.members.filter(Boolean) : [];
+  if (!name) return { ok: false, error: "团队名不能为空" };
+  if (members.length < 2) return { ok: false, error: "官方要求至少两名成员" };
+  const r = await octopFetch("POST", "/api/teams", { name, member_ids: members });
+  audit("team", "创建专家团", name + " (" + members.length + " 人)", r.ok, 0);
+  return { ok: r.ok, data: r.data, error: r.ok ? "" : JSON.stringify(r.data).slice(0, 300) };
+});
+
+handle("teams:remove", async (_e, id) => {
+  if (!id) return { ok: false, error: "缺少团队 id" };
+  const r = await octopFetch("DELETE", "/api/teams/" + encodeURIComponent(id));
+  audit("team", "解散专家团", String(id), r.ok, 0);
+  return { ok: r.ok, error: r.ok ? "" : JSON.stringify(r.data).slice(0, 200) };
+});
+
 handle("dialog:pickFiles", async () => {
   const r = await dialog.showOpenDialog(win, {
     title: "选择要入库的文档",

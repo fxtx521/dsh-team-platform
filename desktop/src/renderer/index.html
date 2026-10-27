@@ -140,6 +140,16 @@
 
     <section class="view" id="view-tasks">
       <div class="card">
+        <div class="card-h"><div><h3>定时任务</h3><p class="sub">官方助理 cron：写清触发时间和要它做什么，到点自动执行</p></div><button class="btn ghost" id="btnCronRefresh">刷新</button></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+          <input id="cronTrigger" class="inp" placeholder="触发，例如 0 9 * * *" style="max-width:170px" />
+          <input id="cronPrompt" class="inp" placeholder="到点做什么，例如 巡检今天的待办" style="max-width:320px" />
+          <button class="btn primary" id="btnCronCreate">新建</button>
+        </div>
+        <div class="sub" style="margin-bottom:6px">时间格式是标准 cron：分 时 日 月 周，例如 0 9 * * * 表示每天九点</div>
+        <div id="cronList" class="list"><div class="sub">加载中…</div></div>
+      </div>
+      <div class="card">
         <div class="card-h"><h3>执行记录</h3><span class="sub" id="taskHint">本机记录</span></div>
         <div id="taskList" class="list"></div>
       </div>
@@ -163,6 +173,12 @@
 
     <section class="view" id="view-experiences">
       <div class="card">
+        <div class="card-h"><div><h3>云端记忆</h3><p class="sub">云端助理沉淀的事实与候选，采纳后会进入它的长期记忆</p></div><button class="btn ghost" id="btnMemRefresh">刷新</button></div>
+        <div id="memAtoms" class="list"><div class="sub">加载中…</div></div>
+        <div class="card-h" style="margin-top:12px"><h3 style="font-size:14px">待定候选</h3></div>
+        <div id="memCandidates" class="list"><div class="sub">加载中…</div></div>
+      </div>
+      <div class="card">
         <div class="card-h"><div><h3>我的经验 / 团队沉淀</h3><p class="sub">任务自动提炼出的经验候选，审核后进技能库。</p></div><button class="btn ghost" id="btnRefreshExp">刷新</button></div>
         <div id="expStats" class="row-stats" style="margin-bottom:12px"></div>
         <div id="expList" class="grid2" style="padding:4px 0"></div>
@@ -181,6 +197,15 @@
     </section>
 
     <section class="view" id="view-expertspage">
+      <div class="card">
+        <div class="card-h"><div><h3>专家团</h3><p class="sub">官方团队接口：一个团至少两人，成员可各自出手</p></div><button class="btn ghost" id="btnTeamRefresh">刷新</button></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+          <input id="teamName" class="inp" placeholder="团队名" style="max-width:200px" />
+          <select id="teamMembers" class="inp" multiple size="3" style="min-width:260px" title="按住 Cmd/Ctrl 多选成员"></select>
+          <button class="btn primary" id="btnTeamCreate">建团</button>
+        </div>
+        <div id="teamList" class="list"><div class="sub">加载中…</div></div>
+      </div>
       <div class="card">
         <div class="card-h"><div><h3>专家广场</h3><p class="sub">选一个专家开始干活，人设与能力不同</p></div><button class="btn ghost" id="btnExpertRefresh">刷新</button></div>
         <div id="expertGrid" class="grid2"></div>
