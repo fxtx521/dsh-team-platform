@@ -76,6 +76,8 @@ contextBridge.exposeInMainWorld('wb', {
   channelAdd: (payload) => ipcRenderer.invoke("channel:add", payload),
   channelRemove: (id) => ipcRenderer.invoke("channel:remove", id),
   appVersion: () => ipcRenderer.invoke("app:version"),
+  updateConfig: () => ipcRenderer.invoke("update:config"),
+  updateSaveConfig: (p) => ipcRenderer.invoke("update:saveConfig", p),
   updateCheck: () => ipcRenderer.invoke("update:check"),
   updateDownload: (p) => ipcRenderer.invoke("update:download", p),
   updateApply: (p) => ipcRenderer.invoke("update:apply", p),

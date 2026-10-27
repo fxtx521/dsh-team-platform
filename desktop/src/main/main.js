@@ -516,26 +516,93 @@ async function ghGet(url) {
   } catch (e) { return { status: 0, body: String((e && e.message) || e) }; }
 }
 
-async function downloadTo(url, file) {
+async function downloadTo(url, file, expect) {
+  const crypto = require("crypto");
   try {
+    try { fs.mkdirSync(path.dirname(file), { recursive: true }); } catch {}
     const res = await net.fetch(url, { headers: { "User-Agent": "lishi-workbench-updater" } });
     if (!res.ok) return { ok: false, error: "HTTP " + res.status };
-    const buf = Buffer.from(await res.arrayBuffer());
-    fs.writeFileSync(file, buf);
-    return { ok: true, file, bytes: buf.length };
+    // 流式落盘，避免把上百 MB 装进内存
+    const { Readable } = require("stream");
+    const tmp = file + ".part";
+    await new Promise((resolve, reject) => {
+      const out = fs.createWriteStream(tmp);
+      Readable.fromWeb(res.body).pipe(out);
+      out.on("finish", resolve);
+      out.on("error", reject);
+    });
+    fs.renameSync(tmp, file);
+    const bytes = fs.statSync(file).size;
+    if (expect && expect.size && Number(expect.size) !== bytes) {
+      try { fs.unlinkSync(file); } catch {}
+      return { ok: false, error: "包大小不符：期望 " + expect.size + "，实际 " + bytes };
+    }
+    if (expect && expect.sha256) {
+      const h = crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+      if (String(expect.sha256).toLowerCase() !== h) {
+        try { fs.unlinkSync(file); } catch {}
+        return { ok: false, error: "校验失败：sha256 不匹配" };
+      }
+    }
+    return { ok: true, file, bytes, verified: !!(expect && (expect.size || expect.sha256)) };
   } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
 }
 
 handle("app:version", async () => app.getVersion());
 
+handle("update:config", async () => {
+  const cfg = readCfg();
+  return { manifestUrl: cfg.updateManifestUrl || "", baseUrl: cfg.updateBaseUrl || "", mirror: cfg.updateMirror || "" };
+});
+
+handle("update:saveConfig", async (_e, p) => {
+  writeCfg({ ...readCfg(), updateManifestUrl: String((p && p.manifestUrl) || ""), updateBaseUrl: String((p && p.baseUrl) || ""), updateMirror: String((p && p.mirror) || "") });
+  return { ok: true };
+});
+
 async function checkUpdate() {
+  const cfg = readCfg();
+  const plat = process.platform === "win32" ? "win" : "mac";
+  // ① 自建更新源（企业内部网络可用）；② 否则走 GitHub Release
+  const readBundledUpdateSource = () => {
+    try {
+      const p = path.join(process.resourcesPath || "", "update-source.json");
+      if (!fs.existsSync(p)) return null;
+      const o = JSON.parse(fs.readFileSync(p, "utf8"));
+      return o && typeof o === "object" ? o : null;
+    } catch { return null; }
+  };
+  const bundled = readBundledUpdateSource() || {};
+  let manifestUrl = process.env.LISHI_UPDATE_MANIFEST || cfg.updateManifestUrl || bundled.manifestUrl || "";
+  log("更新源: " + (manifestUrl ? manifestUrl : "GitHub Release") + (cfg.updateMirror ? "（镜像 " + cfg.updateMirror + "）" : ""));
+  if (manifestUrl) {
+    const m = await ghGet(manifestUrl);
+    let d = null;
+    if (m.status === 200) { try { d = JSON.parse(m.body); } catch { d = null; } }
+    if (!d) {
+      log("自建清单不可用（" + m.status + "），回退 GitHub Release");
+    } else {
+      const latest = String(d.latest || d.version || "").replace(/^v/, "");
+      const cur = app.getVersion();
+      const assetsMap = d.assets || {};
+      const asset = assetsMap[plat] || d.url || "";
+      const pickName = asset ? String(asset).split("/").pop() : ("LiShi-Workbench-" + latest + (plat === "win" ? "-x64.exe" : "-mac-arm64.zip"));
+      const base = String(d.baseUrl || cfg.updateBaseUrl || bundled.baseUrl || "").replace(/\/$/, "");
+      const url = asset ? (asset.startsWith("http") ? asset : (base ? base + "/" + asset : asset)) : (base ? base + "/" + pickName : "");
+      if (latest && url) {
+        const sz = Number(assetsMap[plat + "_size"] || d.size || 0);
+        const sha = String(assetsMap[plat + "_sha256"] || d.sha256 || "");
+        return { ok: true, current: cur, latest, hasUpdate: semverGt(latest, cur), url, size: sz, sha256: sha, name: pickName, notes: String(d.notes || "").slice(0, 1200), page: String(d.page || ""), source: "manifest" };
+      }
+      log("自建清单缺少该平台资产或地址，回退 GitHub Release");
+    }
+  }
   const r = await ghGet("https://api.github.com/repos/" + REPO + "/releases/latest");
   if (r.status !== 200) return { ok: false, error: "查不到最新版本（" + r.status + "）" };
   let d = null;
   try { d = JSON.parse(r.body); } catch { return { ok: false, error: "返回格式不对" }; }
   const latest = String(d.tag_name || "").replace(/^v/, "");
   const cur = app.getVersion();
-  const plat = process.platform === "win32" ? "win" : "mac";
   const assets = Array.isArray(d.assets) ? d.assets : [];
   const pick = assets.find((a) => {
     const n = String(a.name || "");
@@ -543,46 +610,21 @@ async function checkUpdate() {
     return /\.zip$/i.test(n) && /arm64|universal/i.test(n);
   }) || assets.find((a) => (plat === "win" ? /\.exe$/i.test(String(a.name)) : /\.zip$/i.test(String(a.name))));
   const notes = String(d.body || "").slice(0, 1200);
-  return { ok: true, current: cur, latest, hasUpdate: semverGt(latest, cur), url: pick ? pick.browser_download_url : "", size: pick ? pick.size : 0, name: pick ? pick.name : "", notes, page: d.html_url || "" };
+  let dl = pick ? pick.browser_download_url : "";
+  const mirror = String(cfg.updateMirror || "").trim();
+  if (dl && mirror && /github\.com/i.test(dl)) dl = mirror.replace(/\/$/, "") + "/" + dl;
+  return { ok: true, current: cur, latest, hasUpdate: semverGt(latest, cur), url: dl, size: pick ? pick.size : 0, name: pick ? pick.name : "", notes, page: d.html_url || "", source: mirror ? "github+mirror" : "github" };
 }
 
 handle("update:check", async () => await checkUpdate());
 
-handle("update:download", async (_e, { url, name }) => {
-  if (!url) return { ok: false, error: "没有下载地址" };
+handle("update:download", async (_e, payload) => {
+  const p = payload || {};
+  if (!p.url) return { ok: false, error: "没有下载地址" };
   const dir = path.join(app.getPath("userData"), "updates");
   try { fs.mkdirSync(dir, { recursive: true }); } catch {}
-  const file = path.join(dir, String(name || "update.bin"));
-  return await downloadTo(url, file);
-  return await new Promise((resolve) => {
-    const go = (u, redirected) => {
-      const proxy = process.env.https_proxy || process.env.HTTPS_PROXY || process.env.http_proxy || "";
-      const opts = { headers: { "User-Agent": "lishi-workbench-updater" } };
-      let req;
-      try {
-        if (proxy && !redirected) {
-          const p = new URL(proxy); const t = new URL(u);
-          req = http.request({ hostname: p.hostname, port: p.port, path: t.href, headers: { ...opts.headers, Host: t.hostname } }, (res) => onRes(res, u));
-        } else {
-          req = https.get(u, opts, (res) => onRes(res, u));
-        }
-      } catch (e) { return resolve({ ok: false, error: e.message }); }
-      req.on("error", (e) => resolve({ ok: false, error: e.message }));
-      req.setTimeout(120000, () => { try { req.destroy(); } catch {} resolve({ ok: false, error: "下载超时" }); });
-      req.end();
-    };
-    const onRes = (res, u) => {
-      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        return go(res.headers.location, true);
-      }
-      if (res.statusCode !== 200) return resolve({ ok: false, error: "HTTP " + res.statusCode });
-      const out = fs.createWriteStream(file);
-      res.pipe(out);
-      out.on("finish", () => { out.close(() => resolve({ ok: true, file, bytes: fs.statSync(file).size })); });
-      out.on("error", (e) => resolve({ ok: false, error: e.message }));
-    };
-    go(url);
-  });
+  const file = path.join(dir, String(p.name || "update.bin"));
+  return await downloadTo(p.url, file, { size: p.size, sha256: p.sha256 });
 });
 
 async function applyUpdate(file) {
@@ -592,14 +634,33 @@ async function applyUpdate(file) {
     const script = "/tmp/lishi-update.sh";
     const body = [
       "#!/bin/sh",
-      "sleep 2",
-      "rm -rf \"" + appPath + ".updating\"",
-      "ditto -x -k \"" + file + "\" /tmp/lishi-update-unpack 2>/dev/null || true",
-      "rm -rf \"/tmp/lishi-update-unpack/砺工作台.app\" 2>/dev/null || true",
-      "APP=$(find /tmp/lishi-update-unpack -maxdepth 2 -name \"*.app\" | head -1)",
-      "if [ -n \"$APP\" ]; then cp -R \"$APP\" \"" + appPath + ".updating\"; rm -rf \"" + appPath + "\"; mv \"" + appPath + ".updating\" \"" + appPath + "\"; fi",
+      "APP=\"" + appPath + "\"",
+      "PKG=\"" + file + "\"",
+      "VER=\"" + String(app.getVersion()) + "\"",
+      "LOG=/tmp/lishi-update.log",
+      "TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+      "echo \"$TS start app=$APP pkg=$PKG ver=$VER\" >> \"$LOG\"",
+      "i=0",
+      "while pgrep -f \"$APP/Contents/MacOS\" >/dev/null 2>&1 && [ $i -lt 30 ]; do sleep 1; i=$((i+1)); done",
+      "if pgrep -f \"$APP/Contents/MacOS\" >/dev/null 2>&1; then echo \"$TS abort: app still running after ${i}s\" >> \"$LOG\"; exit 1; fi",
+      "echo \"$TS exited after ${i}s\" >> \"$LOG\"",
       "rm -rf /tmp/lishi-update-unpack",
-      "/usr/bin/open -a \"" + appPath + "\"",
+      "if ! ditto -x -k \"$PKG\" /tmp/lishi-update-unpack 2>>\"$LOG\"; then echo \"$TS abort: unzip failed\" >> \"$LOG\"; exit 1; fi",
+      "NEW=$(find /tmp/lishi-update-unpack -maxdepth 2 -name \"*.app\" | head -1)",
+      "if [ -z \"$NEW\" ]; then echo \"$TS abort: no app in package\" >> \"$LOG\"; exit 1; fi",
+      "BAK=\"$APP.bak-$TIMESTAMP\"".replace("$TIMESTAMP", "$(date +%s)"),
+      "echo \"$TS new=$NEW bak=$BAK\" >> \"$LOG\"",
+      "if ! cp -R \"$NEW\" \"$APP.updating\" 2>>\"$LOG\"; then echo \"$TS abort: copy new failed\" >> \"$LOG\"; exit 1; fi",
+      "mv \"$APP\" \"$BAK\" 2>>\"$LOG\" || { echo \"$TS abort: move old failed\" >> \"$LOG\"; exit 1; }",
+      "if mv \"$APP.updating\" \"$APP\" 2>>\"$LOG\"; then",
+      "  echo \"$TS replaced ok, backup=$BAK\" >> \"$LOG\"",
+      "else",
+      "  echo \"$TS FAILED: restore backup\" >> \"$LOG\"",
+      "  rm -rf \"$APP\"; mv \"$BAK\" \"$APP\" 2>>\"$LOG\"",
+      "fi",
+      "rm -rf /tmp/lishi-update-unpack",
+      "/usr/bin/open -a \"$APP\"",
+      "echo \"$TS opened\" >> \"$LOG\"",
       "",
     ].join("\n");
     try { fs.writeFileSync(script, body, { mode: 0o755 }); } catch (e) { return { ok: false, error: e.message }; }
@@ -1864,9 +1925,12 @@ app.whenReady().then(() => {
       const r = await checkUpdate();
       if (r && r.ok) log('更新检查: 当前 ' + r.current + ' / 最新 ' + r.latest + (r.hasUpdate ? '（有新版）' : '（已最新）'));
       // 端到端自测钩子（仅当显式设置环境变量时执行，正常启动不会触发）
-      if (process.env.LISHI_UPDATE_SELFTEST === '1' && r && r.ok && r.hasUpdate && r.url) {
+      let flagFile = false;
+      try { flagFile = fs.existsSync(path.join(process.resourcesPath || "", "auto-update.flag")); } catch {}
+      const selftest = process.env.LISHI_UPDATE_SELFTEST === '1' || process.argv.includes('--selftest-update') || flagFile;
+      if (selftest && r && r.ok && r.hasUpdate && r.url) {
         log('自测: 开始下载 ' + r.name + ' (' + Math.round((r.size || 0) / 1048576) + 'MB)');
-        const d = await downloadTo(r.url, path.join(app.getPath('userData'), 'updates', String(r.name || 'update.zip')));
+        const d = await downloadTo(r.url, path.join(app.getPath('userData'), 'updates', String(r.name || 'update.zip')), { size: r.size, sha256: r.sha256 });
         log('自测: 下载结果 ' + JSON.stringify({ ok: d.ok, bytes: d.bytes, error: d.error }));
         if (d.ok) { log('自测: 准备替换并重启'); await applyUpdate(d.file); }
       }

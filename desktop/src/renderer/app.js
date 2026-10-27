@@ -40,6 +40,15 @@ const api = window.wb || {
   guardConfig: async () => ({ enabled: true, block: [], warn: [] }),
   guardSave: async () => ({ ok: true }),
   onNeedLogin: () => {},
+  updateCheck: async () => ({ ok: true, current: "preview", latest: "preview", hasUpdate: false }),
+  updateDownload: async () => ({ ok: false, error: "预览模式不支持" }),
+  updateApply: async () => ({ ok: false, error: "预览模式不支持" }),
+  updateConfig: async () => ({ manifestUrl: "", baseUrl: "", mirror: "" }),
+  updateSaveConfig: async () => ({ ok: true }),
+  channelFeishuStart: async () => ({ ok: false, error: "预览模式" }),
+  channelFeishuPoll: async () => ({ ok: true, data: {} }),
+  channelFeishuStop: async () => ({ ok: true }),
+  appVersion: async () => "preview",
   pickFolder: async () => '~/Documents/砺项目/新项目',
   addProject: async () => MOCK.cfg.projects,
   removeProject: async () => MOCK.cfg.projects,
@@ -1382,7 +1391,7 @@ function bind() {
     if (!r || !r.ok) { upBtn.disabled = false; show("检查失败：" + ((r && r.error) || "网络问题")); return; }
     if (!r.hasUpdate) { upBtn.disabled = false; show("已经是最新版 v" + r.current); return; }
     show("发现新版本 v" + r.latest + "，正在下载（约 " + Math.round((r.size || 0) / 1048576) + "MB）…");
-    const d = await api.updateDownload({ url: r.url, name: r.name });
+    const d = await api.updateDownload({ url: r.url, name: r.name, size: r.size, sha256: r.sha256 });
     if (!d || !d.ok) { upBtn.disabled = false; show("下载失败：" + ((d && d.error) || "")); return; }
     show("下载完成，正在安装并重启…");
     await api.updateApply({ file: d.file });
