@@ -681,6 +681,73 @@ async function applyUpdate(file) {
 
 handle("update:apply", async (_e, { file }) => await applyUpdate(file));
 
+// ── 全局搜索（本地会话在渲染层做；这里搜项目文件与知识库）──
+const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "build", ".next", "Library", ".tmp_build", ".tmp_npm_cache", "venv", "__pycache__"]);
+const TEXT_EXT = new Set([".md", ".txt", ".json", ".js", ".ts", ".html", ".css", ".py", ".yml", ".yaml", ".csv", ".log", ".sh"]);
+
+function walkFiles(dir, out, depth) {
+  if (out.length >= 3000 || depth > 6) return;
+  let ents = [];
+  try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+  for (const e of ents) {
+    if (out.length >= 3000) return;
+    if (e.name.startsWith(".") && e.name !== ".env") continue;
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) { if (!SKIP_DIRS.has(e.name)) walkFiles(p, out, depth + 1); }
+    else out.push(p);
+  }
+}
+
+handle("shell:openPath", async (_e, p) => {
+  if (!p) return { ok: false, error: "缺少路径" };
+  const msg = await shell.openPath(String(p));
+  return { ok: !msg, error: msg || "" };
+});
+
+handle("search:files", async (_e, q) => {
+  const query = String(q || "").trim().toLowerCase();
+  if (query.length < 2) return { ok: true, list: [] };
+  const cfg = readCfg();
+  const dirs = (cfg.projects || []).map((p) => p.dir).filter((d) => d && fs.existsSync(d)).slice(0, 6);
+  const files = [];
+  for (const d of dirs) walkFiles(d, files, 0);
+  const nameHits = [];
+  const contentHits = [];
+  for (const f of files) {
+    const base = path.basename(f);
+    if (base.toLowerCase().includes(query) && nameHits.length < 20) { nameHits.push({ path: f, name: base, kind: "name" }); continue; }
+    if (contentHits.length >= 15) continue;
+    const ext = path.extname(f).toLowerCase();
+    if (!TEXT_EXT.has(ext)) continue;
+    try {
+      const st = fs.statSync(f);
+      if (st.size > 262144) continue;
+      const txt = fs.readFileSync(f, "utf8");
+      const i = txt.toLowerCase().indexOf(query);
+      if (i >= 0) contentHits.push({ path: f, name: base, kind: "content", snippet: txt.slice(Math.max(0, i - 40), i + 80).replace(/\s+/g, " ").trim() });
+    } catch {}
+  }
+  return { ok: true, list: nameHits.concat(contentHits) };
+});
+
+handle("search:kb", async (_e, q) => {
+  const query = String(q || "").trim().toLowerCase();
+  if (query.length < 2) return { ok: true, list: [] };
+  const r = await octopFetch("GET", "/api/knowledge-bases");
+  const kbs = (r.ok && Array.isArray(r.data)) ? r.data : [];
+  const list = [];
+  for (const kb of kbs.slice(0, 6)) {
+    const id = kb.id || kb.kb_id;
+    const d = await octopFetch("GET", "/api/knowledge-bases/" + encodeURIComponent(id) + "/documents");
+    const docs = (d.ok && Array.isArray(d.data)) ? d.data : [];
+    for (const doc of docs) {
+      const name = String(doc.filename || doc.path || "");
+      if (name.toLowerCase().includes(query) && list.length < 30) list.push({ kbId: id, kbName: kb.name || id, docId: doc.id, name });
+    }
+  }
+  return { ok: true, list };
+});
+
 // ── 技能市场（官方 SkillHub）─────────────────────────────
 handle("skillhub:search", async (_e, q) => {
   const query = String(q || "").trim();
@@ -1834,6 +1901,14 @@ async function ensureAgentProfile(agent, expert) {
   if (r.ok) log("已配置专家助理: " + agent.agent_id + " (" + name + ")");
 }
 
+let _agentsCache = { at: 0, list: [] };
+async function octopAgentsCached() {
+  if (Date.now() - _agentsCache.at < 60000 && _agentsCache.list.length) return _agentsCache.list;
+  const list = await octopAgents();
+  if (Array.isArray(list) && list.length) _agentsCache = { at: Date.now(), list };
+  return list;
+}
+
 async function resolveExpertAgent(expertId) {
   const cfg = readCfg();
   const cache = cfg.expertAgents || {};
@@ -1927,8 +2002,8 @@ async function octopChatOnce({ text, sessionId, agentId, skills, kbIds }) {
     // 先看是不是已有 agent（含 kind=team 的团队）：是就直接用，别当专家去解析
     let direct = null;
     try {
-      const list = await octopAgents();
-      if (Array.isArray(list) && list.some((a) => a.agent_id === aid || a.id === aid)) direct = aid;
+      const list = await octopAgentsCached();
+      if (Array.isArray(list) && list.some((a) => a.agent_id === aid)) direct = aid;
     } catch {}
     if (!direct) {
       const known = (cfg.expertAgents || {})[aid];

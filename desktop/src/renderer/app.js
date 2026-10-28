@@ -786,10 +786,19 @@ async function loadTeams() {
     return '<div class="row"><b>' + esc(String(t.name || "未命名团")) + "</b><span>" + members.length + " 人 · " + esc(String(t.state || t.status || "可用")) + ' <button class="mini" data-teamuse="' + esc(String(id)) + '">派活</button><button class="mini" data-teamdel="' + esc(String(id)) + '">解散</button></span></div>';
   }).join("");
   box.querySelectorAll("[data-teamuse]").forEach((el) => {
-    el.onclick = () => {
-      const sel = $("#chatExpert");
-      if (sel) { sel.value = el.dataset.teamuse; pickedSkills = []; renderSkillCount(); }
+    el.onclick = async () => {
+      if (window.__reloadExpertOptions) { try { await window.__reloadExpertOptions(); } catch {} }
       go("chat");
+      const sel = $("#chatExpert");
+      const tid = el.dataset.teamuse;
+      if (sel) {
+        if (!Array.prototype.some.call(sel.options, (o) => o.value === tid) && window.__reloadExpertOptions) {
+          try { await window.__reloadExpertOptions(); } catch {}
+        }
+        sel.value = tid;
+        if (sel.value !== tid) { toast("团队选项还没刷新，再点一次「派活」"); return; }
+        pickedSkills = []; renderSkillCount();
+      }
       const inp = $("#chatInput");
       if (inp && !inp.value) inp.value = "请团队分工完成：";
       toast("已选中这个团，把目标写清楚再发");
@@ -844,6 +853,52 @@ async function loadCron() {
   });
 }
 
+
+
+// ── 全局搜索（会话 + 项目文件 + 知识库）──────────────────
+function bindSearchMask() {
+  const m = $("#searchModal");
+  if (m && !m._maskBound) {
+    m._maskBound = true;
+    m.addEventListener("click", (e) => { if (e.target === m) closeGlobalSearch(); });
+  }
+}
+async function openGlobalSearch() {
+  const m = $("#searchModal"); if (!m) return;
+  bindSearchMask();
+  m.classList.remove("hidden");
+  const inp = $("#searchInput"); if (inp) { inp.value = ""; inp.focus(); }
+  const box = $("#searchResults"); if (box) box.innerHTML = '<div class="sub">输入至少两个字开始搜</div>';
+}
+function closeGlobalSearch() { const m = $("#searchModal"); if (m) m.classList.add("hidden"); }
+async function runGlobalSearch() {
+  const box = $("#searchResults"); const inp = $("#searchInput");
+  if (!box || !inp) return;
+  const q = inp.value.trim();
+  if (q.length < 2) { box.innerHTML = '<div class="sub">输入至少两个字开始搜</div>'; return; }
+  const seq = (window.__gsSeq = (window.__gsSeq || 0) + 1);
+  box.innerHTML = '<div class="sub">搜索中…</div>';
+  const lq = q.toLowerCase();
+  const sHits = [];
+  for (const s of sessions) {
+    const titleHit = String(s.title || "").toLowerCase().includes(lq);
+    const msgHit = (s.messages || []).find((m) => m.role === "user" && String(m.text || "").toLowerCase().includes(lq));
+    if (titleHit || msgHit) sHits.push({ id: s.id, title: s.title || "未命名会话", snippet: msgHit ? String(msgHit.text).slice(0, 60) : "" });
+    if (sHits.length >= 20) break;
+  }
+  const [fres, kres] = await Promise.all([api.searchFiles(q), api.searchKb(q)]);
+  if (seq !== window.__gsSeq) return;
+  const fHits = (fres && fres.list) || [];
+  const kHits = (kres && kres.list) || [];
+  const parts = [];
+  if (sHits.length) parts.push('<div class="sub" style="margin:6px 0 4px">会话</div>' + sHits.map((s) => '<div class="row"><b>' + esc(s.title) + "</b><span>" + esc(s.snippet) + ' <button class="mini" data-gs-session="' + esc(s.id) + '">打开</button></span></div>').join(""));
+  if (fHits.length) parts.push('<div class="sub" style="margin:6px 0 4px">项目文件</div>' + fHits.map((f) => '<div class="row"><b>' + esc(f.name) + "</b><span>" + esc(String(f.path)) + ' <button class="mini" data-gs-file="' + esc(f.path) + '">打开</button></span></div>').join(""));
+  if (kHits.length) parts.push('<div class="sub" style="margin:6px 0 4px">知识库文档</div>' + kHits.map((d) => '<div class="row"><b>' + esc(d.name) + "</b><span>" + esc(d.kbName) + ' <button class="mini" data-gs-kb="' + esc(d.kbId) + '" data-gs-doc="' + esc(String(d.docId || "")) + '">查看</button></span></div>').join(""));
+  box.innerHTML = parts.join("") || '<div class="sub">没有找到相关结果</div>';
+  box.querySelectorAll("[data-gs-session]").forEach((el) => { el.onclick = () => { curSession = el.dataset.gsSession; renderSessions(); renderChat(); closeGlobalSearch(); go("chat"); }; });
+  box.querySelectorAll("[data-gs-file]").forEach((el) => { el.onclick = async () => { const r = await api.openPath(el.dataset.gsFile); toast(r && r.ok ? "已打开" : "打开失败"); }; });
+  box.querySelectorAll("[data-gs-kb]").forEach((el) => { el.onclick = () => { curKbId = el.dataset.gsKb; window.__kbHighlight = el.dataset.gsDoc || ""; closeGlobalSearch(); go("knowledge"); }; });
+}
 
 function fmtLocal(v) {
   if (!v) return "";
@@ -1017,7 +1072,17 @@ async function loadKbDocs() {
   const title = $("#kbDocsTitle");
   if (title) title.textContent = "文档（" + items.length + "）";
   if (!r || !r.ok) { box.innerHTML = '<div class="sub">' + esc((r && r.error) || "取不到文档") + "</div>"; return; }
-  box.innerHTML = items.map((d) => '<div class="row"><b>' + esc(d.filename || d.path || "文档") + "</b><span>" + esc(String(d.status || "")) + " · " + Math.round((d.byte_size || 0) / 1024) + "KB · 分片 " + (d.chunk_count || 0) + ' <button class="mini" data-kbdel="' + esc(String(d.id)) + '">删除</button></span></div>').join("") || '<div class="sub">还没有文档，点「上传本地文件」</div>';
+  box.innerHTML = items.map((d) => '<div class="row" data-docid="' + esc(String(d.id)) + '"><b>' + esc(d.filename || d.path || "文档") + "</b><span>" + esc(String(d.status || "")) + " · " + Math.round((d.byte_size || 0) / 1024) + "KB · 分片 " + (d.chunk_count || 0) + ' <button class="mini" data-kbdel="' + esc(String(d.id)) + '">删除</button></span></div>').join("") || '<div class="sub">还没有文档，点「上传本地文件」</div>';
+  if (window.__kbHighlight) {
+    const want = window.__kbHighlight;
+    window.__kbHighlight = null;
+    const hit = box.querySelector('[data-docid="' + String(want).replace(/"/g, "") + '"]');
+    if (hit) {
+      hit.style.outline = "2px solid #3b82f6";
+      hit.style.outlineOffset = "2px";
+      if (hit.scrollIntoView) hit.scrollIntoView({ block: "center" });
+    }
+  }
   box.querySelectorAll("[data-kbdel]").forEach((el) => {
     el.onclick = () => {
       showConfirm('删除文档', '会从知识库里移除这份文档，云端索引也会删掉。', async () => {
@@ -1584,6 +1649,14 @@ function bind() {
   const tR = $("#btnTeamRefresh"); if (tR) tR.onclick = loadTeams;
   const cR = $("#btnCronRefresh"); if (cR) cR.onclick = loadCron;
   const mR = $("#btnMemRefresh"); if (mR) mR.onclick = loadMemory;
+  const gsBtn = $("#btnGlobalSearch"); if (gsBtn) gsBtn.onclick = openGlobalSearch;
+  const gsC = $("#searchClose"); if (gsC) gsC.onclick = closeGlobalSearch;
+  const gsI = $("#searchInput");
+  if (gsI) {
+    gsI.onkeydown = (e) => { if (e.key === "Enter") runGlobalSearch(); if (e.key === "Escape") closeGlobalSearch(); };
+    let gsTimer = null;
+    gsI.oninput = () => { clearTimeout(gsTimer); gsTimer = setTimeout(() => { if (gsI.value.trim().length >= 2) runGlobalSearch(); }, 350); };
+  }
   const hS = $("#btnHubSearch"); if (hS) hS.onclick = searchHub;
   const hQ = $("#hubQuery"); if (hQ) hQ.onkeydown = (e) => { if (e.key === "Enter") searchHub(); };
   const pR = $("#btnProvRefresh"); if (pR) pR.onclick = loadProviders;
@@ -1802,6 +1875,7 @@ document.addEventListener("keydown", (e) => {
     const box = $("#chatSearch"); if (box) { box.focus(); box.select(); }
     return;
   }
+  if (meta && e.shiftKey && e.key.toLowerCase() === "f") { e.preventDefault(); openGlobalSearch(); return; }
   if (meta && e.shiftKey && e.key.toLowerCase() === "n") {
     e.preventDefault();
     go("chat");

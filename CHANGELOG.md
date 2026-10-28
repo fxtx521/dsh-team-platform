@@ -1,5 +1,46 @@
 # 更新日志 / Changelog
 
+## 0.47.0（2026-10-28）
+- 新增全局搜索：⌘⇧F 或顶栏「搜索」，一次搜会话标题与消息、项目文件名与内容、知识库文档；知识库结果点开自动定位并高亮命中文档。
+- 修复搜索浮层常驻遮挡界面的问题（隐藏样式缺失）；补充输入防抖、点遮罩关闭、请求序号防抖覆盖。
+
+### EN
+- Added global search (⌘⇧F or the top-bar button): sessions, project file names/content and KB documents in one box; KB hits jump to and highlight the matched document.
+- Fixed the search overlay that stayed visible and blocked the UI; added input debounce, mask-click close and a request sequence guard.
+
+## 0.46.0（2026-10-27）
+- 新增专家团派活：对话专家下拉列出团队，专家团卡片可「派活」；修复团队 id 被当专家解析导致派活不可达的阻断问题。
+- 定时任务支持启用/停用。
+
+### EN
+- Added team dispatch: teams appear in the chat expert dropdown and team cards offer Dispatch; fixed the blocking bug where team IDs were resolved as expert IDs.
+- Cron jobs can be enabled or disabled.
+
+## 0.45.0（2026-10-27）
+- 新增技能市场（SkillHub 搜索与安装）、知识库文档管理（列表/删除）、模型供应商与默认模型切换（密钥仅掩码）。
+
+### EN
+- Added SkillHub marketplace (search & install), KB document management (list/delete), model providers with masked keys and active-model switching.
+
+## 0.44.0（2026-10-27）
+- 与官方对齐第一批：专家团（建团/解散）、定时任务（新建/立即跑/删除）、云端记忆（原子事实/候选采纳忽略）。
+
+### EN
+- First upstream-alignment batch: expert teams (create/dissolve), cron jobs (create/run-now/delete), cloud memory (atoms and candidate promote/reject).
+
+## 0.43.1（2026-10-27）
+- Windows 自更新验证版；更新链加固（size+sha256 校验、备份回滚、退出等待、失败清理）。
+
+### EN
+- Windows self-update verification build; hardened update chain (size + sha256, backup/rollback, exit wait, cleanup).
+
+## 0.43.0（2026-10-27）
+- 自更新、自建更新源、用量与审计、渠道管理、深色模式等。
+
+### EN
+- Self-update, self-hosted update source, usage & audit, channel management, dark mode.
+
+
 所有重要变更记录在此。格式参考 Keep a Changelog；版本遵循语义化。每个版本含**中文 + English** 说明。
 All notable changes are documented here. Format follows Keep a Changelog; versions follow SemVer. Each release has **Chinese + English** notes.
 

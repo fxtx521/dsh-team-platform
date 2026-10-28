@@ -350,3 +350,5 @@ body.dark ::-webkit-scrollbar-thumb{background:#2b3240}
 body.dark .row{background:#1b1f28;border-color:#262b35}
 body.dark .mini{background:#222834;color:#d7dbe3;border-color:#2b3240}
 
+/* 全局弹层显隐（2026-10-28 修：搜索浮层曾因 .hidden 未定义而常驻） */
+.hidden{display:none!important}
