@@ -775,6 +775,47 @@ handle("skillpkg:list", async () => {
   return { ok: r.ok, list: (r.ok && Array.isArray(r.data)) ? r.data : [], error: r.ok ? "" : JSON.stringify(r.data).slice(0, 200) };
 });
 
+// ── 图片粘贴：本地 OCR + 上传云端 ───────────────────────
+handle("image:paste", async (_e, { dataUrl, name }) => {
+  const m = String(dataUrl || "").match(/^data:(image\/[a-z+]+);base64,(.+)$/i);
+  if (!m) return { ok: false, error: "不是有效的图片数据" };
+  const ext = m[1].split("/")[1].replace("+xml", "").replace("jpeg", "jpg");
+  const dir = path.join(app.getPath("temp"), "lishi-img");
+  try { fs.mkdirSync(dir, { recursive: true }); } catch {}
+  const file = path.join(dir, Date.now() + "-" + String(name || "paste").replace(/[^\w.-]/g, "_").slice(0, 40) + "." + ext);
+  try { fs.writeFileSync(file, Buffer.from(m[2], "base64")); } catch (e) { return { ok: false, error: "保存失败：" + String(e.message || e) }; }
+  let text = "";
+  let ocrError = "";
+  try {
+    const bin = "/opt/homebrew/bin/tesseract";
+    if (fs.existsSync(bin)) {
+      text = await new Promise((resolve) => {
+        execFile(bin, [file, "stdout", "-l", "chi_sim+eng"], { timeout: 60000, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
+          if (err) { ocrError = String(err.message || err).slice(0, 120); resolve(""); } else resolve(String(stdout || ""));
+        });
+      });
+    } else {
+      ocrError = "本机没有安装 tesseract";
+    }
+  } catch (e) { ocrError = String((e && e.message) || e).slice(0, 120); }
+  return { ok: true, path: file, text: String(text || "").trim().slice(0, 4000), ocrError };
+});
+
+handle("octop:uploadLocal", async (_e, { file }) => {
+  if (!file || !fs.existsSync(file)) return { ok: false, error: "文件不存在" };
+  const aid = readCfg().octopAgent || (await ensureOctopAgent());
+  if (!aid) return { ok: false, error: "没有可用助理" };
+  const url = octopBase() + "/api/agents/" + aid + "/upload";
+  try {
+    const form = new FormData();
+    form.append("file", new Blob([fs.readFileSync(file)], { type: "application/octet-stream" }), path.basename(file));
+    const res = await net.fetch(url, { method: "POST", headers: { Authorization: "Bearer " + (readCfg().octopToken || "") }, body: form });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return { ok: false, error: "上传失败 " + res.status };
+    return { ok: true, path: data.path || data.workspace_path || "", filename: data.filename || path.basename(file), mediaType: data.media_type || "" };
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+});
+
 // ── 知识库文档管理（官方 knowledge-bases/Documents）────────
 handle("kb:listDocs", async (_e, kbId) => {
   if (!kbId) return { ok: false, list: [], error: "没选知识库" };

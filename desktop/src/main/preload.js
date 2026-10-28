@@ -84,6 +84,8 @@ contextBridge.exposeInMainWorld('wb', {
   skillPackageList: () => ipcRenderer.invoke("skillpkg:list"),
   kbListDocs: (kbId) => ipcRenderer.invoke("kb:listDocs", kbId),
   kbDeleteDoc: (p) => ipcRenderer.invoke("kb:deleteDoc", p),
+  imagePaste: (p) => ipcRenderer.invoke("image:paste", p),
+  octopUploadLocal: (p) => ipcRenderer.invoke("octop:uploadLocal", p),
   kbOpenDocFile: (p) => ipcRenderer.invoke("kb:openDocFile", p),
   kbRenameDoc: (p) => ipcRenderer.invoke("kb:renameDoc", p),
   kbReindexDoc: (p) => ipcRenderer.invoke("kb:reindexDoc", p),

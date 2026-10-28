@@ -1679,6 +1679,32 @@ function bind() {
   const cR = $("#btnCronRefresh"); if (cR) cR.onclick = loadCron;
   const mR = $("#btnMemRefresh"); if (mR) mR.onclick = loadMemory;
   const gsBtn = $("#btnGlobalSearch"); if (gsBtn) gsBtn.onclick = openGlobalSearch;
+  const chatInp = $("#chatInput");
+  if (chatInp && !chatInp._pasteBound) {
+    chatInp._pasteBound = true;
+    chatInp.addEventListener("paste", async (e) => {
+      const items = (e.clipboardData && e.clipboardData.items) || [];
+      let blob = null;
+      for (const it of items) { if (it.type && it.type.startsWith("image/")) { blob = it.getAsFile(); break; } }
+      if (!blob) return;
+      e.preventDefault();
+      toast("正在识别图片…");
+      const dataUrl = await new Promise((resolve) => { const fr = new FileReader(); fr.onload = () => resolve(String(fr.result || "")); fr.readAsDataURL(blob); });
+      const r = await api.imagePaste({ dataUrl, name: "paste" });
+      if (!r || !r.ok) { toast("图片处理失败：" + ((r && r.error) || "").slice(0, 40)); return; }
+      let up = null;
+      try { up = await api.octopUploadLocal({ file: r.path }); } catch {}
+      if (!up || !up.ok) toast("原图上传失败（" + ((up && up.error) || "网络问题") + "），已改用本地识别结果");
+      const ocr = String(r.text || "").trim();
+      const mark = up && up.ok ? "[图片已上传：" + (up.filename || "图片") + "]" : "[本地图片，未上传]";
+      const body = ocr ? (mark + " 图中文字：\n" + ocr + "\n（请结合图片内容回答）") : (mark + " 请结合这张图回答下面的问题：");
+      chatInp.value = (chatInp.value ? chatInp.value + "\n" : "") + body;
+      chatInp.focus();
+      if (ocr) toast("已识别图片文字并填入");
+      else if (r.ocrError) toast("文字识别失败：" + r.ocrError);
+      else toast("图片已附上，但图里没识别到文字");
+    });
+  }
   const gsC = $("#searchClose"); if (gsC) gsC.onclick = closeGlobalSearch;
   const gsI = $("#searchInput");
   if (gsI) {
