@@ -1013,6 +1013,45 @@ handle("dialog:pickFiles", async () => {
   return r.canceled ? [] : r.filePaths;
 });
 
+handle("usage:summary2", async (_e, p) => {
+  const win = String((p && p.window) || "last_30d");
+  const q = (gran) => "/api/usage/summary?window=" + encodeURIComponent(win) + "&granularity=" + gran;
+  const q30 = "/api/usage/summary?window=last_30d&granularity=by_day";
+  const [all, byAgent, byModel, month] = await Promise.all([
+    octopFetch("GET", q("by_day")),
+    octopFetch("GET", q("by_agent")),
+    octopFetch("GET", q("by_model")),
+    win === "last_30d" ? Promise.resolve(null) : octopFetch("GET", q30),
+  ]);
+  const base = (all.ok && all.data) ? all.data : {};
+  return {
+    ok: all.ok,
+    window: win,
+    data: base,
+    agents: (byAgent.ok && byAgent.data && byAgent.data.buckets) || [],
+    models: (byModel.ok && byModel.data && byModel.data.buckets) || [],
+    days: (all.ok && all.data && all.data.buckets) || [],
+    monthTotal: (month && month.ok && month.data && month.data.total_tokens) || (all.ok && all.data && all.data.total_tokens) || 0,
+    quota: readCfg().quota || {},
+    error: all.ok ? "" : JSON.stringify(all.data).slice(0, 200),
+  };
+});
+
+handle("usage:export", async (_e, p) => {
+  const url = octopBase() + "/api/usage/export.xlsx?window=" + encodeURIComponent(String((p && p.window) || "last_30d"));
+  const dir = path.join(app.getPath("temp"), "lishi-usage");
+  try { fs.mkdirSync(dir, { recursive: true }); } catch {}
+  const file = path.join(dir, "usage-" + new Date().toISOString().slice(0, 10) + ".xlsx");
+  try {
+    const res = await net.fetch(url, { headers: { Authorization: "Bearer " + (readCfg().octopToken || "") } });
+    if (!res.ok) return { ok: false, error: "导出失败 " + res.status };
+    fs.writeFileSync(file, Buffer.from(await res.arrayBuffer()));
+    const msg = await shell.openPath(file);
+    audit("usage", "导出用量明细", file, !msg, 0);
+    return { ok: !msg, path: file, error: msg || "" };
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+});
+
 handle("usage:summary", async () => {
   const r = await octopFetch("GET", "/api/usage/summary");
   return { ok: r.ok, data: r.data, quota: readCfg().quota || null };

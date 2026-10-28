@@ -61,6 +61,8 @@ contextBridge.exposeInMainWorld('wb', {
   auditList: (day) => ipcRenderer.invoke("audit:list", day),
   auditExport: (day) => ipcRenderer.invoke("audit:export", day),
   auditDays: () => ipcRenderer.invoke("audit:days"),
+  usageSummary2: (p) => ipcRenderer.invoke("usage:summary2", p),
+  usageExport: (p) => ipcRenderer.invoke("usage:export", p),
   usageSummary: () => ipcRenderer.invoke("usage:summary"),
   saveQuota: (q) => ipcRenderer.invoke("usage:quota", q),
   uploadDocs: (payload) => ipcRenderer.invoke("kb:uploadDoc", payload),

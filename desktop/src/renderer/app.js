@@ -678,35 +678,92 @@ function bindConfirmModal() {
 
 
 // ── 用量与配额 ──────────────────────────────────────────
+let usageRange = 'last_30d';
 async function loadUsage() {
-  const box = $("#usageStat"); if (!box) return;
-  box.innerHTML = '<div class="sub">加载中…</div>';
-  const r = await api.usageSummary();
+  const cards = $('#usageCards'); if (!cards) return;
+  cards.innerHTML = '<div class="sub">加载中…</div>';
+  const r = await api.usageSummary2({ window: usageRange });
   const d = (r && r.data) || {};
   const q = (r && r.quota) || {};
+  const agents = (r && r.agents) || [];
+  const models = (r && r.models) || [];
+  const days = ((r && r.days) || []).slice().sort((a, b) => String(a.key || "").localeCompare(String(b.key || "")));
   const total = Number(d.total_tokens || 0);
-  const today = Array.isArray(d.buckets) && d.buckets.length ? Number((d.buckets[d.buckets.length - 1] || {}).total_tokens || 0) : 0;
-  const rows = [];
-  const row = (k, v) => rows.push("<div class=\"row\"><b>" + k + "</b><span>" + v + "</span></div>");
-  row("统计窗口", esc(String(d.window || "last_30d")));
-  row("累计 token", total ? fmtNum(total) : "—");
-  row("输入 / 输出", fmtNum(Number(d.input_tokens || 0)) + " / " + fmtNum(Number(d.output_tokens || 0)));
-  row("缓存命中率", d.cache_hit_percent != null ? (Number(d.cache_hit_percent).toFixed(2) + "%") : "—");
-  row("模型调用 / 轮次", fmtNum(Number(d.model_calls || 0)) + " / " + fmtNum(Number(d.turns || 0)));
-  if (today) row("最近一天 token", fmtNum(today));
-  const daily = Number(q.dailyTokens || 0);
+  const today = days.length ? Number((days[days.length - 1] || {}).total_tokens || 0) : 0;
+  if (!r || !r.ok) {
+    const msg = '<div class="sub">' + esc((r && r.error) || '取不到用量数据') + '</div>';
+    ['#usageCards', '#usageBudget', '#usageAgents', '#usageModels', '#usageDays'].forEach((sel) => { const el = $(sel); if (el) el.innerHTML = msg; });
+    return;
+  }
+  const card = (k, v, s) => '<div class="usage-card"><div class="k">' + k + '</div><div class="v">' + v + '</div>' + (s ? '<div class="s">' + s + '</div>' : '') + '</div>';
+  cards.innerHTML = [
+    card('本周期 token', fmtNum(total), '入 ' + fmtNum(d.input_tokens) + ' / 出 ' + fmtNum(d.output_tokens)),
+    card('最近一天', fmtNum(today), days.length ? esc(String(days[days.length - 1].label || '')) : ''),
+    card('模型调用', fmtNum(d.model_calls), fmtNum(d.turns) + ' 轮对话'),
+    card('每轮平均', fmtNum(d.avg_per_turn), 'token/轮'),
+    card('缓存命中', d.cache_hit_percent != null ? (Number(d.cache_hit_percent).toFixed(0) + '%') : '—', '命中越多越省钱'),
+  ].join('');
   const monthly = Number(q.monthlyTokens || 0);
-  if (daily > 0 && today > 0) {
-    const pct = Math.min(100, Math.round((today / daily) * 100));
-    row("对比每日额度", pct + "%" + (pct >= 80 ? "（已超八成）" : ""));
+  const dailyQuota = Number(q.dailyTokens || 0);
+  const monthSpent = Number((r && r.monthTotal) || (d.total_tokens || 0));
+  const bBox = $('#usageBudget');
+  if (bBox) {
+    if (monthly > 0) {
+      const pct = Math.round((monthSpent / monthly) * 100);
+      const cls = pct >= 100 ? 'danger' : (pct >= 80 ? 'warn' : '');
+      const msg = pct >= 100 ? '已超本月额度' : (pct >= 80 ? '已用超八成，注意节奏' : '还在安全区间');
+      bBox.innerHTML = '<div style="display:flex;justify-content:space-between;font-size:13px"><b>本月额度（固定近 30 天口径，与上方周期无关）</b><span>' + fmtNum(monthSpent) + ' / ' + fmtNum(monthly) + '（' + pct + '%）</span></div>'
+        + '<div class="usage-bar"><i class="' + cls + '" style="width:' + pct + '%"></i></div>'
+        + '<div class="sub">' + msg + (dailyQuota > 0 ? '；每日额度 ' + fmtNum(dailyQuota) + '，最近一天用了 ' + Math.round((today / dailyQuota) * 100) + '%' : '') + '；额度在下方设置，提醒不阻断发送</div>';
+    } else {
+      bBox.innerHTML = '<div class="sub">还没设本月额度，下方填一个数字就能看到进度条</div>';
+    }
   }
-  if (monthly > 0 && total > 0) {
-    const pct = Math.min(100, Math.round((total / monthly) * 100));
-    row("对比每月额度", pct + "%" + (pct >= 80 ? "（已超八成）" : ""));
+  const aBox = $('#usageAgents');
+  if (aBox) {
+    const all = agents.filter((x) => Number(x.total_tokens || 0) > 0).slice().sort((a, b) => Number(b.total_tokens || 0) - Number(a.total_tokens || 0));
+    const list = all.slice(0, 5);
+    const restTokens = all.slice(5).reduce((s, x) => s + Number(x.total_tokens || 0), 0);
+    if (restTokens > 0) list.push({ label: "其他 " + (all.length - 5) + " 个", total_tokens: restTokens });
+    const max = list.length ? Number(list[0].total_tokens || 1) : 1;
+    aBox.innerHTML = list.length ? list.map((x) => {
+      const v = Number(x.total_tokens || 0);
+      const w = Math.max(2, Math.round((v / max) * 100));
+      return '<div class="usage-rank"><div class="nm">' + esc(String(x.label || x.key || '未知')) + '</div><div class="track"><i style="width:' + w + '%"></i></div><div class="num">' + fmtNum(v) + ' · ' + Math.round((v / total) * 100) + '%</div></div>';
+    }).join('') : '<div class="sub">这个周期还没有助理消耗</div>';
   }
-  box.innerHTML = rows.join("");
-  if ($("#quotaDaily")) $("#quotaDaily").value = daily || "";
-  if ($("#quotaMonthly")) $("#quotaMonthly").value = monthly || "";
+  const mBox = $('#usageModels');
+  if (mBox) {
+    const list = models.filter((x) => Number(x.total_tokens || 0) > 0).sort((a, b) => Number(b.total_tokens || 0) - Number(a.total_tokens || 0));
+    const max = list.length ? Number(list[0].total_tokens || 1) : 1;
+    mBox.innerHTML = '<div class="sub" style="margin-bottom:8px">模型分布</div>' + (list.length ? list.map((x) => {
+      const v = Number(x.total_tokens || 0);
+      return '<div class="usage-rank"><div class="nm">' + esc(String(x.label || x.key || '')) + '</div><div class="track"><i style="width:' + Math.max(2, Math.round((v / max) * 100)) + '%"></i></div><div class="num">' + fmtNum(v) + ' · ' + Math.round((v / (total || 1)) * 100) + '%</div></div>';
+    }).join('') : '<div class="sub">无数据</div>');
+  }
+  const dBox = $('#usageDays');
+  if (dBox) {
+    const byKey = new Map(days.map((x) => [String(x.key || ''), x]));
+    const filled = [];
+    if (days.length) {
+      const lastKey = String(days[days.length - 1].key || '');
+      const startMs = new Date(lastKey + 'T00:00:00Z').getTime() - 13 * 86400000;
+      for (let i = 0; i < 14; i += 1) {
+        const k = new Date(startMs + i * 86400000).toISOString().slice(0, 10);
+        filled.push(byKey.get(k) || { key: k, label: k, total_tokens: 0 });
+      }
+    }
+    const series = filled;
+    const max = series.length ? Math.max.apply(null, series.map((x) => Number(x.total_tokens || 0))) : 1;
+    dBox.innerHTML = '<div class="sub" style="margin-bottom:8px">每日趋势（最近 ' + series.length + ' 天）</div>'
+      + (series.length ? '<div class="usage-spark">' + series.map((x) => {
+        const v = Number(x.total_tokens || 0);
+        const h = Math.max(3, Math.round((v / (max || 1)) * 100));
+        return '<i style="height:' + h + '%" title="' + esc(String(x.label || '')) + ' ' + fmtNum(v) + '"></i>';
+      }).join('') + '</div>' : '<div class="sub">无数据</div>');
+  }
+  if ($('#quotaDaily')) $('#quotaDaily').value = Number(q.dailyTokens || 0) || '';
+  if ($('#quotaMonthly')) $('#quotaMonthly').value = monthly || '';
 }
 
 function fmtNum(n) {
@@ -1679,6 +1736,15 @@ function bind() {
   const cR = $("#btnCronRefresh"); if (cR) cR.onclick = loadCron;
   const mR = $("#btnMemRefresh"); if (mR) mR.onclick = loadMemory;
   const gsBtn = $("#btnGlobalSearch"); if (gsBtn) gsBtn.onclick = openGlobalSearch;
+  const uEx = $("#btnUsageExport");
+  if (uEx) uEx.onclick = async () => { toast("正在导出…"); const r = await api.usageExport({ window: usageRange }); toast(r && r.ok ? "已打开导出文件" : ("导出失败：" + ((r && r.error) || "").slice(0, 50))); };
+  $$(".usage-range").forEach((b) => {
+    b.onclick = () => {
+      usageRange = b.dataset.range || "last_30d";
+      $$(".usage-range").forEach((x) => x.classList.toggle("active", x === b));
+      loadUsage();
+    };
+  });
   const chatInp = $("#chatInput");
   if (chatInp && !chatInp._pasteBound) {
     chatInp._pasteBound = true;

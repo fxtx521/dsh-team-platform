@@ -236,10 +236,30 @@
       </div>
     </section>
 
-    <section class="view" id="view-usage">
+        <section class="view" id="view-usage">
       <div class="card">
-        <div class="card-h"><div><h3>用量与配额</h3><p class="sub">数字来自 Octop 云端账单，配额在本地设、本地提醒</p></div><button class="btn ghost" id="btnUsageRefresh">刷新</button></div>
-        <div id="usageStat" class="list"><div class="sub">加载中…</div></div>
+        <div class="card-h">
+          <div><h3>用量总览</h3><p class="sub">数字来自云端账单；切时间范围看不同周期</p></div>
+          <div style="display:flex;gap:6px">
+            <button class="btn ghost usage-range" data-range="last_7d">近 7 天</button>
+            <button class="btn ghost usage-range active" data-range="last_30d">近 30 天</button>
+            <button class="btn ghost usage-range" data-range="last_90d">近 90 天</button>
+            <button class="btn ghost" id="btnUsageExport">导出明细</button>
+          </div>
+        </div>
+        <div id="usageCards" class="usage-cards"><div class="sub">加载中…</div></div>
+        <div class="usage-budget" id="usageBudget"></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h3>助理消耗排行</h3><p class="sub">按 token 从高到低</p></div>
+        <div id="usageAgents"><div class="sub">加载中…</div></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h3>模型分布与每日趋势</h3><p class="sub">左边是各模型用量，右边是最近每天的总量</p></div>
+        <div class="usage-split">
+          <div id="usageModels"><div class="sub">加载中…</div></div>
+          <div id="usageDays"><div class="sub">加载中…</div></div>
+        </div>
       </div>
       <div class="card">
         <div class="card-h"><h3>额度设置</h3></div>
