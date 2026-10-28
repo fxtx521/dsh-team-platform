@@ -1076,7 +1076,7 @@ async function loadKbDocs() {
   const title = $("#kbDocsTitle");
   if (title) title.textContent = "文档（" + items.length + "）";
   if (!r || !r.ok) { box.innerHTML = '<div class="sub">' + esc((r && r.error) || "取不到文档") + "</div>"; return; }
-  box.innerHTML = items.map((d) => '<div class="row" data-docid="' + esc(String(d.id)) + '"><b>' + esc(d.filename || d.path || "文档") + "</b><span>" + esc(String(d.status || "")) + " · " + Math.round((d.byte_size || 0) / 1024) + "KB · 分片 " + (d.chunk_count || 0) + ' <button class="mini" data-kbdel="' + esc(String(d.id)) + '">删除</button></span></div>').join("") || '<div class="sub">还没有文档，点「上传本地文件」</div>';
+  box.innerHTML = items.map((d) => '<div class="row" data-docid="' + esc(String(d.id)) + '"><b>' + esc(d.filename || d.path || "文档") + "</b><span>" + esc(String(d.status || "")) + " · " + Math.round((d.byte_size || 0) / 1024) + "KB · 分片 " + (d.chunk_count || 0) + ' <button class="mini" data-kbopen="' + esc(String(d.id)) + '" data-kbname="' + esc(d.filename || "") + '">打开</button><button class="mini" data-kbrename="' + esc(String(d.id)) + '" data-kbname="' + esc(d.filename || "") + '">改名</button><button class="mini" data-kbreindex="' + esc(String(d.id)) + '">重建索引</button><button class="mini" data-kbdel="' + esc(String(d.id)) + '">删除</button></span></div>').join("") || '<div class="sub">还没有文档，点「上传本地文件」</div>';
   if (window.__kbHighlight) {
     const want = window.__kbHighlight;
     window.__kbHighlight = null;
@@ -1087,6 +1087,31 @@ async function loadKbDocs() {
       if (hit.scrollIntoView) hit.scrollIntoView({ block: "center" });
     }
   }
+  box.querySelectorAll("[data-kbopen]").forEach((el) => {
+    el.onclick = async () => {
+      toast("正在取文件…");
+      const r2 = await api.kbOpenDocFile({ kbId: curKbId, docId: el.dataset.kbopen, name: el.dataset.kbname });
+      toast(r2 && r2.ok ? "已用默认程序打开" : ("打开失败：" + ((r2 && r2.error) || "").slice(0, 60)));
+    };
+  });
+  box.querySelectorAll("[data-kbrename]").forEach((el) => {
+    el.onclick = () => {
+      const nm = prompt("新文件名", el.dataset.kbname || "");
+      if (!nm || nm === el.dataset.kbname) return;
+      (async () => {
+        const r2 = await api.kbRenameDoc({ kbId: curKbId, docId: el.dataset.kbrename, name: nm });
+        toast(r2 && r2.ok ? "已改名" : ("改名失败：" + ((r2 && r2.error) || "").slice(0, 60)));
+        loadKbDocs();
+      })();
+    };
+  });
+  box.querySelectorAll("[data-kbreindex]").forEach((el) => {
+    el.onclick = async () => {
+      const r2 = await api.kbReindexDoc({ kbId: curKbId, docId: el.dataset.kbreindex });
+      toast(r2 && r2.ok ? "已提交重建索引" : "重建失败");
+      setTimeout(loadKbDocs, 1500);
+    };
+  });
   box.querySelectorAll("[data-kbdel]").forEach((el) => {
     el.onclick = () => {
       showConfirm('删除文档', '会从知识库里移除这份文档，云端索引也会删掉。', async () => {

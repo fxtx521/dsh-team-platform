@@ -782,6 +782,39 @@ handle("kb:listDocs", async (_e, kbId) => {
   return { ok: r.ok, list: (r.ok && Array.isArray(r.data)) ? r.data : [], error: r.ok ? "" : JSON.stringify(r.data).slice(0, 200) };
 });
 
+handle("kb:openDocFile", async (_e, { kbId, docId, name }) => {
+  if (!kbId || !docId) return { ok: false, error: "缺少参数" };
+  const base = octopBase();
+  const url = base + "/api/knowledge-bases/" + encodeURIComponent(kbId) + "/documents/" + encodeURIComponent(docId) + "/file";
+  const dir = path.join(app.getPath("temp"), "lishi-kb");
+  try { fs.mkdirSync(dir, { recursive: true }); } catch {}
+  const safeName = String(name || "document").replace(/[\/\\:*?"<>|]/g, "_").slice(0, 80);
+  const file = path.join(dir, Date.now() + "-" + safeName);
+  try {
+    const res = await net.fetch(url, { headers: { Authorization: "Bearer " + (readCfg().octopToken || "") } });
+    if (!res.ok) return { ok: false, error: "下载失败 " + res.status };
+    const buf = Buffer.from(await res.arrayBuffer());
+    fs.writeFileSync(file, buf);
+    const msg = await shell.openPath(file);
+    return { ok: !msg, path: file, error: msg || "" };
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+});
+
+handle("kb:renameDoc", async (_e, { kbId, docId, name }) => {
+  const nm = String(name || "").trim();
+  if (!kbId || !docId || !nm) return { ok: false, error: "新名字不能为空" };
+  const r = await octopFetch("POST", "/api/knowledge-bases/" + encodeURIComponent(kbId) + "/documents/" + encodeURIComponent(docId) + "/rename", { new_name: nm.slice(0, 255) });
+  audit("kb", "重命名文档", String(docId) + " -> " + String(name).slice(0, 40), r.ok, 0);
+  return { ok: r.ok, error: r.ok ? "" : JSON.stringify(r.data).slice(0, 200) };
+});
+
+handle("kb:reindexDoc", async (_e, { kbId, docId }) => {
+  if (!kbId || !docId) return { ok: false, error: "缺少参数" };
+  const r = await octopFetch("POST", "/api/knowledge-bases/" + encodeURIComponent(kbId) + "/documents/" + encodeURIComponent(docId) + "/reindex", {});
+  audit("kb", "重建文档索引", String(docId), r.ok, 0);
+  return { ok: r.ok, error: r.ok ? "" : JSON.stringify(r.data).slice(0, 200) };
+});
+
 handle("kb:deleteDoc", async (_e, { kbId, docId }) => {
   if (!kbId || !docId) return { ok: false, error: "缺少参数" };
   const r = await octopFetch("DELETE", "/api/knowledge-bases/" + encodeURIComponent(kbId) + "/documents/" + encodeURIComponent(docId));
