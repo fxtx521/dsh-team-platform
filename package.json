@@ -1,0 +1,61 @@
+{
+  "name": "lishi-workbench",
+  "productName": "砺 · 工作台",
+  "version": "0.47.1",
+  "description": "砺 · 本地工作台客户端（连接云端团队 AI 平台）",
+  "main": "src/main/main.js",
+  "author": "liubang",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist:mac": "electron-builder --mac dmg",
+    "dist:win": "electron-builder --win nsis",
+    "dist:all": "electron-builder -mwl"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "com.zibo.lishi.workbench",
+    "productName": "砺工作台",
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg"
+      ],
+      "artifactName": "LiShi-Workbench-${version}-${arch}.dmg"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "LiShi-Workbench-${version}-${arch}.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    },
+    "extraResources": [
+      {
+        "from": "update-source.json",
+        "to": "update-source.json"
+      }
+    ]
+  },
+  "dependencies": {
+    "mammoth": "^1.13.0",
+    "pdf-parse": "^2.4.5",
+    "ws": "^8.22.0",
+    "xlsx": "^0.18.5"
+  }
+}

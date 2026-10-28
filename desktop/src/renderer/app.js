@@ -865,17 +865,18 @@ function bindSearchMask() {
 }
 async function openGlobalSearch() {
   const m = $("#searchModal"); if (!m) return;
+  window.__gsSeq = (window.__gsSeq || 0) + 1;
   bindSearchMask();
   m.classList.remove("hidden");
   const inp = $("#searchInput"); if (inp) { inp.value = ""; inp.focus(); }
   const box = $("#searchResults"); if (box) box.innerHTML = '<div class="sub">输入至少两个字开始搜</div>';
 }
-function closeGlobalSearch() { const m = $("#searchModal"); if (m) m.classList.add("hidden"); }
+function closeGlobalSearch() { window.__gsSeq = (window.__gsSeq || 0) + 1; const m = $("#searchModal"); if (m) m.classList.add("hidden"); }
 async function runGlobalSearch() {
   const box = $("#searchResults"); const inp = $("#searchInput");
   if (!box || !inp) return;
   const q = inp.value.trim();
-  if (q.length < 2) { box.innerHTML = '<div class="sub">输入至少两个字开始搜</div>'; return; }
+  if (q.length < 2) { window.__gsSeq = (window.__gsSeq || 0) + 1; box.innerHTML = '<div class="sub">输入至少两个字开始搜</div>'; return; }
   const seq = (window.__gsSeq = (window.__gsSeq || 0) + 1);
   box.innerHTML = '<div class="sub">搜索中…</div>';
   const lq = q.toLowerCase();
@@ -1067,7 +1068,10 @@ async function loadKnowledge() {
 async function loadKbDocs() {
   const box = $('#kbDocs');
   if (!curKbId) { box.innerHTML = '<div class="sub">选一个知识库查看文档</div>'; return; }
+  const seq = (window.__kbSeq = (window.__kbSeq || 0) + 1);
+  const kbAtStart = curKbId;
   const r = await api.kbListDocs(curKbId);
+  if (seq !== window.__kbSeq || kbAtStart !== curKbId) return;
   const items = (r && r.list) || [];
   const title = $("#kbDocsTitle");
   if (title) title.textContent = "文档（" + items.length + "）";
