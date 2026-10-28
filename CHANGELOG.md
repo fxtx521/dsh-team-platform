@@ -1,5 +1,17 @@
 # 更新日志 / Changelog
 
+## 0.47.1（2026-10-28，已撤回）
+- 该版本因发布流水线取错源码目录（tag 内 desktop 仍是 0.47.0），Windows 包名与内容版本不符，已撤回并删除发布与 tag；同内容以 0.47.2 重发。
+
+## 0.47.2（2026-10-28）
+- 修复全局搜索弹层被裁（误用普通弹窗样式导致关闭按钮与输入框被裁剪）；打开/关闭/短查询推进请求序号，防止旧结果覆盖；知识库列表加请求序号。
+- 0.47.1 因流水线取错源码目录导致 Windows 包版本错误，已撤回，0.47.2 为重发版。
+
+### EN
+- Fixed the clipped global-search overlay (generic modal styles cut off the close button and input); request sequences on open/close/short queries and on the KB document list prevent stale overwrites.
+- 0.47.1 was withdrawn because the pipeline picked a stale desktop directory, so the Windows asset had the wrong version; 0.47.2 supersedes it.
+
+
 ## 0.47.0（2026-10-28）
 - 新增全局搜索：⌘⇧F 或顶栏「搜索」，一次搜会话标题与消息、项目文件名与内容、知识库文档；知识库结果点开自动定位并高亮命中文档。
 - 修复搜索浮层常驻遮挡界面的问题（隐藏样式缺失）；补充输入防抖、点遮罩关闭、请求序号防抖覆盖。
