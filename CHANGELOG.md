@@ -3,6 +3,14 @@
 ## 0.47.1（2026-10-28，已撤回）
 - 该版本因发布流水线取错源码目录（tag 内 desktop 仍是 0.47.0），Windows 包名与内容版本不符，已撤回并删除发布与 tag；同内容以 0.47.2 重发。
 
+## 0.48.0（2026-10-28）
+- 知识库文档新增打开、改名、重建索引（删除保留二次确认）；打开会把原文件取到本地并用系统程序打开。
+- 改名拦截空白名；延续 0.47.3 的更新清单免缓存修复。
+
+### EN
+- KB documents can be opened locally, renamed and reindexed (delete kept with confirmation).
+- Rename rejects blank names; carries the 0.47.3 uncached-manifest fix.
+
 ## 0.47.3（2026-10-28）
 - 修复自动更新取到旧清单：清单请求加时间戳并禁用缓存，客户端每次都能看到线上最新版；0.47.2 及更早版本受此影响需手动安装一次。
 
