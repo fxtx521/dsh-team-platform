@@ -510,7 +510,7 @@ function semverGt(a, b) {
 
 async function ghGet(url) {
   try {
-    const res = await net.fetch(url, { headers: { "User-Agent": "lishi-workbench-updater", "Accept": "application/vnd.github+json" } });
+    const res = await net.fetch(url, { cache: "no-store", headers: { "User-Agent": "lishi-workbench-updater", "Accept": "application/vnd.github+json", "Cache-Control": "no-cache" } });
     const body = await res.text();
     return { status: res.status, body };
   } catch (e) { return { status: 0, body: String((e && e.message) || e) }; }
@@ -576,7 +576,9 @@ async function checkUpdate() {
   let manifestUrl = process.env.LISHI_UPDATE_MANIFEST || cfg.updateManifestUrl || bundled.manifestUrl || "";
   log("更新源: " + (manifestUrl ? manifestUrl : "GitHub Release") + (cfg.updateMirror ? "（镜像 " + cfg.updateMirror + "）" : ""));
   if (manifestUrl) {
-    const m = await ghGet(manifestUrl);
+    // 加时间戳破缓存：Electron net 会缓存清单，曾导致客户端一直认为「已最新」
+    const bust = manifestUrl + (manifestUrl.includes("?") ? "&" : "?") + "t=" + Date.now();
+    const m = await ghGet(bust);
     let d = null;
     if (m.status === 200) { try { d = JSON.parse(m.body); } catch { d = null; } }
     if (!d) {
