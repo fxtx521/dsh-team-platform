@@ -2098,14 +2098,26 @@ async function refreshAgentMcp(agentId, reason) {
 async function octopChat(opts) {
   const r = await octopChatOnce(opts);
   if (r && !r.ok && /mcp load failed/i.test(String(r.error || ""))) {
-    log("检测到 mcp load failed，探测本地 MCP 后重试一次");
+    // 不再自动重发（会让同一句话在云端记两遍、团队重复分工）；只重载 MCP 并提示重发
+    log("检测到 mcp load failed，重载 MCP（不自动重发）");
     const cfg = readCfg();
     const aid = opts && opts.agentId ? ((cfg.expertAgents || {})[opts.agentId] || opts.agentId) : cfg.octopAgent;
     await refreshAgentMcp(aid || cfg.octopAgent, "chat retry");
-    await new Promise((done) => setTimeout(done, 1500));
-    return await octopChatOnce(opts);
+    return { ok: false, error: "MCP 已重连，刚才那条没发出去，请再发一次" };
   }
   return r;
+}
+
+function extractMessageText(frame) {
+  try {
+    const content = frame && frame.data && frame.data.message && frame.data.message.content;
+    if (Array.isArray(content)) {
+      return content.map((b) => (b && (b.text || b.content || "")).toString()).join("").trim();
+    }
+    if (typeof (frame && frame.text) === "string") return frame.text.trim();
+    if (frame && frame.data && typeof frame.data.text === "string") return frame.data.text.trim();
+  } catch {}
+  return "";
 }
 
 async function octopChatOnce({ text, sessionId, agentId, skills, kbIds }) {
@@ -2150,13 +2162,15 @@ async function octopChatOnce({ text, sessionId, agentId, skills, kbIds }) {
       const t = m.type || (m.data && m.data.type);
       if (t === "error") { clearTimeout(timer); return finish({ ok: false, error: m.message || "对话出错" }); }
       if (t === "done") { clearTimeout(timer); return finish({ ok: true, reply: out, elapsed_ms: Date.now() - started }); }
-      // Octop 流式帧：token 帧的正文在 content 字段
-      if (t === "token" && typeof m.content === "string") { out += m.content; return; }
-      if (t === "reasoning") return;
-      const chunk = (typeof m.text === "string" && m.text) ||
-                    (m.data && (typeof m.data.text === "string" ? m.data.text : (typeof m.data.delta === "string" ? m.data.delta : ""))) ||
-                    (typeof m.content === "string" ? m.content : "");
-      if (typeof chunk === "string") out += chunk;
+      // 只认流式 token 累加；其它帧（reasoning/state/tool/usage 等）一律不拼正文，避免同一句话被拼多遍
+      if (t === "token") { if (typeof m.content === "string") out += m.content; return; }
+      if (t === "reasoning" || t === "usage" || t === "turn.started" || t === "turn.ended") return;
+      if (t === "tool_call_chunk" || t === "tool_result" || t === "state_update" || t === "state_snapshot") return;
+      // 团队场景会有多条 assistant/message（协调人 + 成员），只保留最后一条完整快照，不累加
+      if (t === "assistant/message" || t === "message") {
+        const txt = extractMessageText(m);
+        if (txt && txt.length >= out.length) out = txt;
+      }
     });
     const started = Date.now();
     ws.on("error", (e) => { clearTimeout(timer); finish({ ok: false, error: e.message }); });

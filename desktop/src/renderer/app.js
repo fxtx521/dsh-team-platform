@@ -1504,68 +1504,71 @@ function renderChat() {
   box.scrollTop = box.scrollHeight;
   renderSessions();
 }
+let chatSending = false;
 async function sendChat() {
   const inp = $('#chatInput');
+  if (!inp) return;
   const text = (inp.value || '').trim();
   if (!text) return;
+  if (chatSending) { toast('上一条还在跑，等它回来再发'); return; }
+  let tip = null;
   try {
-    const g = await api.guardCheck(text);
-    if (g && g.blocked) {
-      toast('含敏感词：' + (g.block || []).join('、') + '，已拦下不发送');
-      return;
+    try {
+      const g = await api.guardCheck(text);
+      if (g && g.blocked) { toast('含敏感词：' + (g.block || []).join('、') + '，已拦下不发送'); return; }
+      if (g && g.warn && g.warn.length) toast('提醒：内容含 ' + g.warn.join('、') + '，已照常发送');
+    } catch {}
+    chatSending = true;
+    const sendBtn = $('#chatSend'); if (sendBtn) sendBtn.disabled = true;
+    const s = getSession();
+    const sid = s.id;
+    inp.value = '';
+    if (!s.msgs || !s.msgs.length) s.title = text.slice(0, 18);
+    s.msgs.push({ role: 'user', text });
+    saveSessions();
+    renderChat();
+    const box = $('#chatBody');
+    tip = document.createElement('div');
+    tip.className = 'typing';
+    let waited = 0;
+    tip._paint = () => {
+      const extra = activeSteps > 0 ? (' · 第 ' + activeSteps + ' 步' + (activeTool ? '：' + activeTool : '')) : '';
+      tip.innerHTML = '助理思考中 ' + waited + 's' + extra + '<i></i><i></i><i></i>';
+    };
+    tip._paint();
+    tip._timer = setInterval(() => { waited += 1; if (tip._paint) tip._paint(); }, 1000);
+    tip._tick = () => { waited += 1; if (tip._paint) tip._paint(); };
+    activeTip = tip; activeSteps = 0; activeTool = '';
+    box.appendChild(tip); box.scrollTop = box.scrollHeight;
+    const proj = $('#chatProject') ? $('#chatProject').value : '';
+    const expert = $('#chatExpert') ? $('#chatExpert').value : '';
+    let r;
+    try {
+      r = api.octopChat
+        ? await api.octopChat({ text, sessionId: sid, agentId: expert || undefined, skills: pickedSkills.slice(), kbIds: pickedKbs.slice() })
+        : await api.chat(text, sid, attachments.slice(), proj, expert);
+    } catch (e) {
+      r = { ok: false, error: (e && e.message) || '发送失败' };
     }
-    if (g && g.warn && g.warn.length) toast('提醒：内容含 ' + g.warn.join('、') + '，已照常发送');
-  } catch {}
-  const s = getSession();          // 锁定本次发送所属会话
-  const sid = s.id;
-  inp.value = '';
-  if (!s.msgs || !s.msgs.length) s.title = text.slice(0, 18);
-  s.msgs.push({ role: 'user', text });
-  saveSessions();
-  renderChat();
-  const box = $('#chatBody');
-  const tip = document.createElement('div');
-  tip.className = 'typing';
-  let waited = 0;
-  const paint = () => { tip.innerHTML = '助理思考中 ' + waited + 's<i></i><i></i><i></i>'; };
-  paint();
-  const tipTimer = setInterval(() => { if (tip._tick) tip._tick(); }, 1000);
-  tip._timer = tipTimer;
-  tip._paint = () => {
-    const extra = activeSteps > 0 ? (" · 第 " + activeSteps + " 步" + (activeTool ? "：" + activeTool : "")) : "";
-    tip.innerHTML = "助理思考中 " + waited + "s" + extra + "<i></i><i></i><i></i>";
-  };
-  tip._waited = () => waited;
-  tip._tick = () => { waited += 1; if (tip._paint) tip._paint(); };
-  activeTip = tip;
-  activeSteps = 0;
-  activeTool = "";
-  box.appendChild(tip); box.scrollTop = box.scrollHeight;
-  const proj = $('#chatProject') ? $('#chatProject').value : '';
-  const expert = $('#chatExpert') ? $('#chatExpert').value : '';
-  const callOnce = async () => {
-    if (api.octopChat) {
-      const res = await api.octopChat({ text, sessionId: sid, agentId: expert || undefined, skills: pickedSkills.slice(), kbIds: pickedKbs.slice() });
-      return res && res.ok ? { ok: true, data: { reply: res.reply, elapsed_ms: res.elapsed_ms } } : { ok: false, data: { error: (res && res.error) || "对话失败" } };
+    attachments = []; renderAttach();
+    const ok = !!(r && (r.ok === undefined ? r.data && !r.error : r.ok));
+    const reply = r && (r.reply !== undefined ? r.reply : (r.data && r.data.reply));
+    const errMsg = r && (r.error || (r.data && r.data.error));
+    if (ok) s.msgs.push({ role: 'ai', text: reply || '(空)', meta: ((r && (r.elapsed_ms || (r.data && r.data.elapsed_ms))) || 0) + 'ms' });
+    else s.msgs.push({ role: 'ai', text: '⚠️ ' + friendlyError(String(errMsg || '对话失败')) });
+    saveSessions();
+    if (curSession === s.id) renderChat();
+  } finally {
+    if (tip) {
+      if (tip._timer) clearInterval(tip._timer);
+      if (activeTip === tip) { activeTip = null; activeSteps = 0; activeTool = ''; }
+      try { tip.remove(); } catch {}
     }
-    return await api.chat(text, sid, attachments.slice(), proj, expert);
-  };
-  let r = await callOnce();
-  if (!r || !r.ok) {
-    toast("第一次没成功，正在自动重试…");
-    await new Promise((done) => setTimeout(done, 900));
-    r = await callOnce();
+    chatSending = false;
+    const sb = $('#chatSend'); if (sb) sb.disabled = false;
   }
-  attachments = []; renderAttach();
-  if (tip._timer) clearInterval(tip._timer);
-  if (activeTip === tip) { activeTip = null; activeSteps = 0; activeTool = ""; }
-  tip.remove();
-  // 只写回发起这条消息的会话（即使中途切走了）
-  if (r && r.ok) s.msgs.push({ role: 'ai', text: r.data.reply || '(空)', meta: (r.data.elapsed_ms || 0) + 'ms' });
-  else s.msgs.push({ role: 'ai', text: '⚠️ ' + friendlyError((r && r.data && r.data.error) || JSON.stringify((r && r.data) || {})) });
-  saveSessions();
-  renderChat();
 }
+
 function renderAttach() {
   const box = $('#chatAttach'); if (!box) return;
   box.innerHTML = attachments.map((f, i) => `<span class="chip">📎 <b>${esc(f.name)}</b><span data-rm="${i}">✕</span></span>`).join('');
