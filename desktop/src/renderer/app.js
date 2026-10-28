@@ -1511,6 +1511,7 @@ async function sendChat() {
   const text = (inp.value || '').trim();
   if (!text) return;
   if (chatSending) { toast('上一条还在跑，等它回来再发'); return; }
+  chatSending = true;
   let tip = null;
   try {
     try {
@@ -1518,7 +1519,6 @@ async function sendChat() {
       if (g && g.blocked) { toast('含敏感词：' + (g.block || []).join('、') + '，已拦下不发送'); return; }
       if (g && g.warn && g.warn.length) toast('提醒：内容含 ' + g.warn.join('、') + '，已照常发送');
     } catch {}
-    chatSending = true;
     const sendBtn = $('#chatSend'); if (sendBtn) sendBtn.disabled = true;
     const s = getSession();
     const sid = s.id;
@@ -1651,9 +1651,18 @@ function bindChat() {
     };
   }
   renderAttach();
-  $('#chatInput').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
-  });
+  const chatInputEl = $('#chatInput');
+  if (chatInputEl && !chatInputEl._enterBound) {
+    chatInputEl._enterBound = true;
+    chatInputEl.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' || e.shiftKey) return;
+      if (e.metaKey || e.ctrlKey) return; // Cmd/Ctrl+Enter 交给全局快捷键，避免提示重复
+      if (e.isComposing || e.keyCode === 229) return;
+      if (e.repeat) return;
+      e.preventDefault();
+      sendChat();
+    });
+  }
   renderChat();
 }
 function bind() {
