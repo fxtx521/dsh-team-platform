@@ -946,7 +946,8 @@ handle("cron:create", async (_e, payload) => {
   const trigger = String(p.trigger || "").trim();
   const prompt = String(p.prompt || "").trim();
   if (!trigger || !prompt) return { ok: false, error: "触发规则和任务内容都要填" };
-  const r = await octopFetch("POST", "/api/agents/" + aid + "/cron", { trigger: trigger.startsWith("cron:") ? trigger : "cron:" + trigger, prompt });
+  const trig = /^(cron|interval|date|agently):/.test(trigger) ? trigger : "cron:" + trigger;
+  const r = await octopFetch("POST", "/api/agents/" + aid + "/cron", { trigger: trig, prompt });
   audit("cron", "新建定时任务", trigger + " | " + prompt.slice(0, 40), r.ok, 0);
   return { ok: r.ok, data: r.data, error: r.ok ? "" : JSON.stringify(r.data).slice(0, 300) };
 });

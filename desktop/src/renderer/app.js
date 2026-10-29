@@ -1746,6 +1746,14 @@ function bind() {
   const chR = $("#btnChannelRefresh"); if (chR) chR.onclick = loadChannels;
   const tR = $("#btnTeamRefresh"); if (tR) tR.onclick = loadTeams;
   const cR = $("#btnCronRefresh"); if (cR) cR.onclick = loadCron;
+  const cT = $("#cronType");
+  if (cT) cT.onchange = () => {
+    const v = cT.value;
+    const t = $("#cronTrigger"), e = $("#cronEvery"), a = $("#cronAt");
+    if (t) t.style.display = v === "cron" ? "" : "none";
+    if (e) e.style.display = v === "interval" ? "" : "none";
+    if (a) a.style.display = v === "date" ? "" : "none";
+  };
   const mR = $("#btnMemRefresh"); if (mR) mR.onclick = loadMemory;
   const gsBtn = $("#btnGlobalSearch"); if (gsBtn) gsBtn.onclick = openGlobalSearch;
   const uEx = $("#btnUsageExport");
@@ -1797,7 +1805,14 @@ function bind() {
 
   const cC = $("#btnCronCreate");
   if (cC) cC.onclick = async () => {
-    const trigger = (($("#cronTrigger") || {}).value || "").trim();
+    const type = (($("#cronType") || {}).value || "cron");
+    const raw = (($("#cronTrigger") || {}).value || "").trim();
+    const n = (($("#cronEvery") || {}).value || "").trim();
+    const at = (($("#cronAt") || {}).value || "").trim();
+    let trigger = "";
+    if (type === "cron") trigger = raw ? (raw.startsWith("cron:") ? raw : "cron:" + raw) : "";
+    else if (type === "interval") trigger = n ? "interval:" + Math.max(60, parseInt(n, 10) || 0) : "";
+    else trigger = at ? "date:" + at.replace("T", "T") + (at.length <= 16 ? ":00" : "") : "";
     const prompt = (($("#cronPrompt") || {}).value || "").trim();
     if (!trigger || !prompt) { toast("触发规则和任务内容都要填"); return; }
     const r = await api.cronCreate({ trigger, prompt });

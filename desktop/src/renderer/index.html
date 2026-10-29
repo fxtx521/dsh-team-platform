@@ -143,11 +143,18 @@
       <div class="card">
         <div class="card-h"><div><h3>定时任务</h3><p class="sub">官方助理 cron：写清触发时间和要它做什么，到点自动执行</p></div><button class="btn ghost" id="btnCronRefresh">刷新</button></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-          <input id="cronTrigger" class="inp" placeholder="触发，例如 0 9 * * *" style="max-width:170px" />
+          <select id="cronType" class="inp" style="max-width:120px">
+            <option value="cron">按 cron</option>
+            <option value="interval">每隔多久</option>
+            <option value="date">指定时刻</option>
+          </select>
+          <input id="cronTrigger" class="inp" placeholder="例如 0 9 * * *" style="max-width:170px" />
+          <input id="cronEvery" class="inp" placeholder="每隔多少秒，例如 3600" style="max-width:170px;display:none" />
+          <input id="cronAt" type="datetime-local" class="inp" style="max-width:210px;display:none" />
           <input id="cronPrompt" class="inp" placeholder="到点做什么，例如 巡检今天的待办" style="max-width:320px" />
           <button class="btn primary" id="btnCronCreate">新建</button>
         </div>
-        <div class="sub" style="margin-bottom:6px">时间格式是标准 cron：分 时 日 月 周，例如 0 9 * * * 表示每天九点</div>
+        <div class="sub" style="margin-bottom:6px" id="cronHint">标准 cron：分 时 日 月 周，例如 0 9 * * * 表示每天九点；也可选每隔多久或指定某天某时</div>
         <div id="cronList" class="list"><div class="sub">加载中…</div></div>
       </div>
       <div class="card">
